@@ -1,0 +1,6 @@
+{
+  "name": "Pulsar Tecnologia - Placas Google Avaliações, QR Code & NFC",
+  "description": "E-commerce de placas inteligentes para avaliação do Google, QR Code e tecnologia NFC por aproximação, kits empresariais e gestão de reputação.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
