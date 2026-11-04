@@ -61,13 +61,17 @@ export const CheckoutModal: React.FC = () => {
 
   // Address Form
   const defaultAddr = currentUser?.addresses[0];
-  const [zipCode, setZipCode] = useState(defaultAddr?.zipCode || '04571-010');
-  const [street, setStreet] = useState(defaultAddr?.street || 'Avenida Eng. Luís Carlos Berrini');
-  const [number, setNumber] = useState(defaultAddr?.number || '105');
-  const [complement, setComplement] = useState(defaultAddr?.complement || 'Sala 81');
-  const [neighborhood, setNeighborhood] = useState(defaultAddr?.neighborhood || 'Cidade Monções');
-  const [city, setCity] = useState(defaultAddr?.city || 'São Paulo');
-  const [state, setState] = useState(defaultAddr?.state || 'SP');
+  const [zipCode, setZipCode] = useState(defaultAddr?.zipCode || destinationCep || '');
+  // Never prefill a real delivery form with an unrelated demonstration address.
+  const [street, setStreet] = useState(defaultAddr?.street || '');
+  const [number, setNumber] = useState(defaultAddr?.number || '');
+  const [complement, setComplement] = useState(defaultAddr?.complement || '');
+  const [neighborhood, setNeighborhood] = useState(defaultAddr?.neighborhood || '');
+  const [city, setCity] = useState(defaultAddr?.city || '');
+  const [state, setState] = useState(defaultAddr?.state || '');
+  const [validatedCep, setValidatedCep] = useState('');
+  const [isLookingUpCep, setIsLookingUpCep] = useState(false);
+  const [cepLookupError, setCepLookupError] = useState('');
 
   // Credit Card Form
   const [cardNumber, setCardNumber] = useState('4532 •••• •••• 8892');
@@ -104,13 +108,46 @@ export const CheckoutModal: React.FC = () => {
   const orderTotal = Math.max(0, cartSubtotal - discountAmount + finalShippingPrice);
 
   const handleCepSearch = async () => {
-    if (zipCode.length >= 8) {
-      await calculateShipping(zipCode);
+    const cleanCep = zipCode.replace(/\D/g, '');
+    setValidatedCep('');
+    setCepLookupError('');
+    if (cleanCep.length !== 8) {
+      setCepLookupError('Informe um CEP válido com 8 dígitos.');
+      return;
+    }
+    setIsLookingUpCep(true);
+    try {
+      const response = await fetch('/api/address/lookup?cep=' + cleanCep, { cache: 'no-store' });
+      const address = await response.json();
+      if (!response.ok) throw new Error(address.error || 'CEP não encontrado.');
+      // Clear previously entered street data if ViaCEP only resolves city/UF.
+      setStreet(address.street || '');
+      setNeighborhood(address.neighborhood || '');
+      setCity(address.city || '');
+      setState(address.state || '');
+      setNumber('');
+      setComplement('');
+      setValidatedCep(cleanCep);
+      if (!address.street) {
+        showToast('CEP localizado. Preencha a rua, bairro e número se necessário.', 'info');
+      }
+      await calculateShipping(cleanCep);
+    } catch (err) {
+      setValidatedCep('');
+      const msg = err instanceof Error ? err.message : 'Falha ao consultar CEP.';
+      setCepLookupError(msg);
+      showToast(msg, 'error');
+    } finally {
+      setIsLookingUpCep(false);
     }
   };
 
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (validatedCep !== zipCode.replace(/\D/g, '') || !street.trim() || !neighborhood.trim() || !city.trim() || !state.trim()) {
+      showToast('Consulte o CEP e confirme rua, bairro, cidade, UF e número antes de continuar.', 'error');
+      return;
+    }
     if (!fullName || !email || !cpf || !whatsapp || !street || !number) {
       showToast('Por favor preencha todos os campos obrigatórios.', 'error');
       return;
@@ -381,18 +418,35 @@ export const CheckoutModal: React.FC = () => {
                             required
                             maxLength={9}
                             value={zipCode}
-                            onChange={(e) => setZipCode(e.target.value)}
+                            onChange={(e) => {
+                              setZipCode(e.target.value);
+                              setValidatedCep('');
+                              setCepLookupError('');
+                              setStreet('');
+                              setNumber('');
+                              setComplement('');
+                              setNeighborhood('');
+                              setCity('');
+                              setState('');
+                              setSelectedShipping(null);
+                            }}
                             className="w-full bg-[#181820] text-xs text-white px-3.5 py-2.5 rounded-xl border border-white/10 focus:outline-none focus:border-[#FF5500]"
                           />
                           <button
                             type="button"
                             onClick={handleCepSearch}
-                            className="px-3 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition flex items-center gap-1"
+                            disabled={isLookingUpCep || isCalculatingShipping}
+                            className="px-3 rounded-xl bg-white/10 hover:bg-white/20 disabled:opacity-50 text-white text-xs font-bold transition flex items-center gap-1"
                           >
                             <Truck className="w-3.5 h-3.5" />
-                            <span>{isCalculatingShipping ? '...' : 'Calcular'}</span>
+                            <span>{isCalculatingShipping || isLookingUpCep ? '...' : 'Calcular'}</span>
                           </button>
                         </div>
+                        {cepLookupError && <p className="mt-1 text-[11px] text-red-400">{cepLookupError}</p>}
+                        {validatedCep && !cepLookupError &&
+                          <p className="mt-1 text-[11px] text-emerald-400">
+                            CEP localizado: {city} - {state}. Confirme rua, bairro e número.
+                          </p>}
                       </div>
 
                       <div className="sm:col-span-6">
