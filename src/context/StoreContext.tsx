@@ -15,7 +15,8 @@ import {
   updateOrderStatusInSupabase,
   fetchSettingsFromSupabase,
   updateSettingsInSupabase,
-  getSupabaseClient
+  getSupabaseClient,
+  getAdminApiLastError
 } from '../lib/supabase';
 
 interface Toast {
@@ -476,7 +477,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         showToast('Produto atualizado e confirmado no Supabase.', 'success');
       } else {
         setProducts((prev) => prev.map((p) => p.id === id ? previous : p));
-        showToast('Falha ao salvar no Supabase. Alteração revertida.', 'error');
+        showToast('Falha ao salvar no Supabase: ' + (getAdminApiLastError() || 'sem resposta do servidor') + '. Alteração revertida.', 'error');
       }
     }).catch(() => {
       setProducts((prev) => prev.map((p) => p.id === id ? previous : p));
