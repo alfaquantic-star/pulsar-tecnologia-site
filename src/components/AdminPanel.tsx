@@ -188,6 +188,12 @@ export const AdminPanel: React.FC = () => {
   const [mpTestResult, setMpTestResult] = useState<{ success: boolean; message: string; user?: any } | null>(null);
   const [isTestingMelhorEnvio, setIsTestingMelhorEnvio] = useState(false);
   const [melhorEnvioTestResult, setMelhorEnvioTestResult] = useState<{ success: boolean; message: string; environment?: string; availableOptions?: number } | null>(null);
+  const [isCheckingCheckout, setIsCheckingCheckout] = useState(false);
+  const [checkoutReadiness, setCheckoutReadiness] = useState<{
+    readyForPayments: boolean;
+    checks: Record<string, boolean>;
+    message: string;
+  } | null>(null);
 
   // Metrics
   const totalRevenue = orders
@@ -509,6 +515,36 @@ export const AdminPanel: React.FC = () => {
       showToast('Falha no teste do Mercado Pago', 'error');
     } finally {
       setIsTestingMp(false);
+    }
+  };
+
+  const handleCheckCheckoutReadiness = async () => {
+    setIsCheckingCheckout(true);
+    setCheckoutReadiness(null);
+    try {
+      const { getSupabaseClient } = await import('../lib/supabase');
+      const client = getSupabaseClient();
+      const { data: { session } } = client
+        ? await client.auth.getSession()
+        : { data: { session: null } };
+      if (!session?.access_token) {
+        showToast('Entre novamente como administrador.', 'error');
+        return;
+      }
+      const response = await fetch('/api/admin/checkout-readiness', {
+        headers: { Authorization: 'Bearer ' + session.access_token },
+        cache: 'no-store'
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.checks) {
+        showToast(result.error || 'Falha ao verificar prontidão do checkout.', 'error');
+        return;
+      }
+      setCheckoutReadiness(result);
+    } catch {
+      showToast('Falha na consulta de prontidão do checkout.', 'error');
+    } finally {
+      setIsCheckingCheckout(false);
     }
   };
 
@@ -1995,6 +2031,28 @@ export const AdminPanel: React.FC = () => {
                     <li>Gere um novo token com permissões de cálculo de frete e envio, e cole no formulário acima.</li>
                   </ol>
                 </div>
+              </div>
+
+              <div className="rounded-2xl border border-blue-500/25 bg-blue-950/15 p-4 space-y-3">
+                <p className="font-extrabold text-sm text-white">Diagnóstico de prontidão do Checkout</p>
+                <p className="text-xs text-slate-400">Somente leitura. Confere variáveis e estrutura do banco sem exibir segredos e sem criar pedido.</p>
+                <button type="button" disabled={isCheckingCheckout} onClick={handleCheckCheckoutReadiness}
+                  className="rounded-xl border border-blue-400/40 bg-blue-500/15 p-3 text-xs text-blue-200 font-bold disabled:opacity-50">
+                  {isCheckingCheckout ? 'Verificando...' : 'Verificar segurança do checkout'}
+                </button>
+                {checkoutReadiness && (
+                  <div className="text-xs space-y-2">
+                    {Object.entries(checkoutReadiness.checks).map(([name, passed]) => (
+                      <div key={name} className="flex items-center justify-between gap-3">
+                        <span className="text-slate-300 break-all">{name}</span>
+                        <span className={passed ? 'text-emerald-300' : 'text-amber-300'}>
+                          {passed ? 'OK' : 'Pendente'}
+                        </span>
+                      </div>
+                    ))}
+                    <p className="text-amber-200">{checkoutReadiness.message}</p>
+                  </div>
+                )}
               </div>
 
               {/* Action Save Button */}
