@@ -132,9 +132,9 @@ export async function testSupabaseConnection(): Promise<{
   }
 
   try {
-    // Attempt a lightweight select from products or site_settings
+    // Public catalog remains accessible after site_settings becomes private.
     const { data, error } = await client
-      .from('site_settings')
+      .from('products')
       .select('id')
       .limit(1);
 
