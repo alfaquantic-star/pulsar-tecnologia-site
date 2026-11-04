@@ -56,8 +56,15 @@ export const CheckoutModal: React.FC = () => {
   const [isCheckingCart, setIsCheckingCart] = useState(false);
   const [serverCartResult, setServerCartResult] = useState<{
     validated: boolean; subtotal?: number; message: string;
+    total?: number; discount?: number; couponStatus?: string;
+    shipping?: { id: string; carrier: string; service: string; price: number; estimatedDays: number } | null;
     lines?: Array<{ id: string; name: string; quantity: number; unitPrice: number; total: number }>;
   } | null>(null);
+  useEffect(() => {
+    // Prevent showing a server quote for a different cart/CEP/shipping option.
+    setServerCartResult(null);
+  }, [cart, zipCode, selectedShipping?.id, appliedCoupon]);
+
 
 
   // Customer Form
@@ -160,7 +167,11 @@ export const CheckoutModal: React.FC = () => {
           items: cart.map(item => ({
             ...(item.isKit ? { kitId: item.kitId } : { productId: item.productId }),
             quantity: item.quantity
-          }))
+          })),
+          ...(selectedShipping && validatedCep === zipCode.replace(/\D/g, '')
+            ? { cep: validatedCep, shippingId: selectedShipping.id }
+            : {}),
+          coupon: appliedCoupon || null
         }),
         cache: 'no-store'
       });
@@ -175,6 +186,10 @@ export const CheckoutModal: React.FC = () => {
       setServerCartResult({
         validated: true,
         subtotal: result.subtotal,
+        total: result.total,
+        discount: result.discount,
+        shipping: result.shipping,
+        couponStatus: result.couponStatus,
         lines: result.lines,
         message: typeof result.message === 'string' ? result.message : 'Catálogo validado pelo servidor.'
       });
@@ -804,9 +819,26 @@ export const CheckoutModal: React.FC = () => {
                               Subtotal confirmado pelo Supabase: R$ {serverCartResult.subtotal.toFixed(2)}
                             </p>
                           )}
+                          {serverCartResult.validated && serverCartResult.shipping && (
+                            <>
+                              <p className="mt-1">
+                                Frete recalculado ({serverCartResult.shipping.carrier} — {serverCartResult.shipping.service}):
+                                R$ {serverCartResult.shipping.price.toFixed(2)}
+                              </p>
+                              <p className="mt-1 font-bold">
+                                Total preliminar calculado no servidor: R$ {serverCartResult.total?.toFixed(2)}
+                              </p>
+                            </>
+                          )}
                           {serverCartResult.validated && (
-                            <p className="mt-1 text-slate-400">
-                              Este valor não inclui frete nem descontos. Nenhum pedido foi criado.
+                            <p className="mt-2 text-slate-400">
+                              {serverCartResult.couponStatus === 'not_yet_authorized'
+                                ? 'Cupom exibido no carrinho ainda não está autorizado no servidor e não foi descontado. '
+                                : ''}
+                              {serverCartResult.shipping
+                                ? 'Total apenas para testes: embalagem e frete final ainda exigem confirmação.'
+                                : 'Informe e calcule o CEP, selecione um frete e valide novamente para obter um total.'}
+                              {' '}Nenhum pedido ou cobrança foi criado.
                             </p>
                           )}
                         </div>
