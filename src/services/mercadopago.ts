@@ -180,35 +180,38 @@ export async function createMercadoPagoPreference(params: {
 /**
  * Tests connection to Mercado Pago with the provided Access Token
  */
-export async function testMercadoPagoConnection(accessToken: string): Promise<{
+export async function testMercadoPagoConnection(): Promise<{
   success: boolean;
   message: string;
-  user?: any;
 }> {
-  if (!accessToken || !accessToken.trim()) {
-    return {
-      success: false,
-      message: 'Access Token não informado. Preencha o campo com seu token Mercado Pago (começando com APP_USR- ou TEST-).'
-    };
+  // The Access Token is never sent by the browser. Supabase Auth provides
+  // the session; the protected Vercel route reads the token from server env.
+  const { getSupabaseClient } = await import('../lib/supabase');
+  const client = getSupabaseClient();
+  const { data: { session } } = client
+    ? await client.auth.getSession()
+    : { data: { session: null } };
+  if (!session?.access_token) {
+    return { success: false, message: 'Entre como administrador para testar Mercado Pago.' };
   }
-
   try {
-    // Attempt via backend test route
-    const res = await fetch('/api/mercadopago/test-connection', {
+    const response = await fetch('/api/mercadopago/test-connection', {
       method: 'POST',
       headers: {
+        Authorization: 'Bearer ' + session.access_token,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({ accessToken: accessToken.trim() })
+      body: '{}',
+      cache: 'no-store'
     });
-
-    if (res.ok) {
-      return await res.json();
-    }
-  } catch (err) {
-    console.warn('Backend test route error, falling back to direct check...', err);
+    const result = await response.json().catch(() => ({}));
+    return {
+      success: response.ok && result.success === true,
+      message: typeof result.message === 'string'
+        ? result.message
+        : 'Não foi possível verificar a conexão com Mercado Pago.'
+    };
+  } catch {
+    return { success: false, message: 'Falha de conexão com o servidor da Vercel.' };
   }
-
-  // Nunca envie Access Token diretamente pelo navegador.
-  return { success: false, message: 'Configure MERCADO_PAGO_ACCESS_TOKEN nas variáveis protegidas da Vercel. Testes devem ocorrer apenas no servidor.' };
 }
