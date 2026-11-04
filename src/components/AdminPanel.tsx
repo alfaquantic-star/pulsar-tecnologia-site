@@ -488,14 +488,11 @@ export const AdminPanel: React.FC = () => {
   };
 
   const handleTestMercadoPago = async () => {
-    if (!cmsMercadoPagoToken.trim()) {
-      showToast('Por favor, informe o Access Token do Mercado Pago antes de testar.', 'error');
-      return;
-    }
+    // No tokens from browser forms. Server env owns MERCADO_PAGO_ACCESS_TOKEN.
     setIsTestingMp(true);
     setMpTestResult(null);
     try {
-      const res = await testMercadoPagoConnection(cmsMercadoPagoToken);
+      const res = await testMercadoPagoConnection();
       setMpTestResult(res);
       if (res.success) {
         showToast('Conexão com o Mercado Pago validada com sucesso!', 'success');
