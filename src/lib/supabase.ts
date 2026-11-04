@@ -38,7 +38,8 @@ async function adminApi(path: string, method: 'GET'|'POST'|'PATCH'|'DELETE', bod
     const json = await res.json().catch(() => ({}));
     adminApiLastError = res.ok ? '' : ('HTTP ' + res.status + ' · ' +
       (typeof json.code === 'string' ? json.code : 'unknown_error') +
-      (typeof json.dbCode === 'string' ? ' (' + json.dbCode + ')' : ''));
+      (typeof json.dbCode === 'string' ? ' (' + json.dbCode + ')' : '') +
+      (typeof json.reason === 'string' ? ' · ' + json.reason : ''));
     if (!res.ok) console.warn('Pulsar admin API:', adminApiLastError);
     return { ok: res.ok, status: res.status, data: json.data };
   } catch {
