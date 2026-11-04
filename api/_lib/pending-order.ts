@@ -47,7 +47,7 @@ const validCents = (v: unknown): v is number =>
 const fail = (message: string): never => { throw new Error(message); };
 
 export function buildPendingOrderDraft(verified: VerifiedCheckout, idempotencyKey: string) {
-  if (!/^[0-9a-fA-F-]{36}$/.test(idempotencyKey)) fail('Invalid idempotency key');
+  if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(idempotencyKey)) fail('Invalid idempotency key');
   if (!verified || !Array.isArray(verified.lines) || !verified.lines.length || verified.lines.length > 20) {
     fail('Verified cart required');
   }
