@@ -458,20 +458,30 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const updateProduct = (id: string, partial: Partial<Product>) => {
-    let updatedProd: Product | undefined;
-    setProducts((prev) =>
-      prev.map((p) => {
-        if (p.id === id) {
-          updatedProd = { ...p, ...partial };
-          return updatedProd;
-        }
-        return p;
-      })
-    );
-    showToast('Produto atualizado com sucesso.', 'success');
-    if (updatedProd && isSupabaseConfigured()) {
-      upsertProductInSupabase(updatedProd).catch((err) => console.warn('Supabase product sync error:', err));
+    const previous = products.find((p) => p.id === id);
+    if (!previous) {
+      showToast('Produto não encontrado.', 'error');
+      return;
     }
+    const updatedProd: Product = { ...previous, ...partial };
+    // React state updates are asynchronous: never rely on a mutable variable
+    // assigned inside setProducts to construct the database request.
+    setProducts((prev) => prev.map((p) => p.id === id ? updatedProd : p));
+    if (!isSupabaseConfigured()) {
+      showToast('Supabase indisponível. Alteração apenas local; não foi salva.', 'error');
+      return;
+    }
+    void upsertProductInSupabase(updatedProd).then((saved) => {
+      if (saved) {
+        showToast('Produto atualizado e confirmado no Supabase.', 'success');
+      } else {
+        setProducts((prev) => prev.map((p) => p.id === id ? previous : p));
+        showToast('Falha ao salvar no Supabase. Alteração revertida.', 'error');
+      }
+    }).catch(() => {
+      setProducts((prev) => prev.map((p) => p.id === id ? previous : p));
+      showToast('Falha de conexão. Alteração revertida.', 'error');
+    });
   };
 
   const deleteProduct = (id: string) => {
@@ -494,20 +504,27 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const updateKit = (id: string, partial: Partial<Kit>) => {
-    let updatedKit: Kit | undefined;
-    setKits((prev) =>
-      prev.map((k) => {
-        if (k.id === id) {
-          updatedKit = { ...k, ...partial };
-          return updatedKit;
-        }
-        return k;
-      })
-    );
-    showToast('Kit atualizado com sucesso.', 'success');
-    if (updatedKit && isSupabaseConfigured()) {
-      upsertKitInSupabase(updatedKit).catch((err) => console.warn('Supabase kit sync error:', err));
+    const previous = kits.find((k) => k.id === id);
+    if (!previous) {
+      showToast('Kit não encontrado.', 'error');
+      return;
     }
+    const updatedKit: Kit = { ...previous, ...partial };
+    setKits((prev) => prev.map((k) => k.id === id ? updatedKit : k));
+    if (!isSupabaseConfigured()) {
+      showToast('Supabase indisponível. Alteração apenas local; não foi salva.', 'error');
+      return;
+    }
+    void upsertKitInSupabase(updatedKit).then((saved) => {
+      if (saved) showToast('Kit atualizado e confirmado no Supabase.', 'success');
+      else {
+        setKits((prev) => prev.map((k) => k.id === id ? previous : k));
+        showToast('Falha ao salvar kit no Supabase. Alteração revertida.', 'error');
+      }
+    }).catch(() => {
+      setKits((prev) => prev.map((k) => k.id === id ? previous : k));
+      showToast('Falha de conexão. Alteração revertida.', 'error');
+    });
   };
 
   const deleteKit = (id: string) => {
