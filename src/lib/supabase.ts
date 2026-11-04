@@ -232,6 +232,40 @@ export async function fetchProductsFromSupabase(): Promise<Product[] | null> {
   }
 }
 
+/**
+ * Update only fields that actually changed, avoiding overwriting unrelated
+ * price, cost, stock, or imagery fields during a description-only edit.
+ */
+export async function patchProductInSupabase(productId: string, changes: Partial<Product>): Promise<boolean> {
+  const row: Record<string, unknown> = {};
+  const fieldMap: Array<[keyof Product, string]> = [
+    ['name', 'name'], ['slug', 'slug'],
+    ['shortDescription', 'short_description'],
+    ['detailedDescription', 'detailed_description'],
+    ['salePrice', 'sale_price'], ['promoPrice', 'promo_price'],
+    ['cost', 'cost'], ['stock', 'stock'],
+    ['trackStock', 'track_stock'], ['sku', 'sku'],
+    ['category', 'category'], ['chipType', 'chip_type'],
+    ['weightGrams', 'weight_grams'], ['isActive', 'is_active'],
+    ['isFeatured', 'is_featured'], ['isBestSeller', 'is_best_seller'],
+    ['rating', 'rating'], ['reviewsCount', 'reviews_count'],
+    ['badge', 'badge'], ['images', 'images']
+  ];
+  for (const [key, column] of fieldMap) {
+    if (Object.prototype.hasOwnProperty.call(changes, key) && changes[key] !== undefined) {
+      row[column] = changes[key];
+    }
+  }
+  if (changes.dimensions !== undefined) {
+    if (changes.dimensions.heightCm !== undefined) row.height_cm = changes.dimensions.heightCm;
+    if (changes.dimensions.widthCm !== undefined) row.width_cm = changes.dimensions.widthCm;
+    if (changes.dimensions.lengthCm !== undefined) row.length_cm = changes.dimensions.lengthCm;
+  }
+  if (!Object.keys(row).length) return true;
+  const result = await adminApi('/api/admin/catalog?table=products&id=' + encodeURIComponent(productId), 'PATCH', row);
+  return result.ok;
+}
+
 export async function upsertProductInSupabase(prod: Product): Promise<boolean> {
   const client = getSupabaseClient();
   if (!client) return false;
