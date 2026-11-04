@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { verifyAdminIdentity } from '../_lib/admin-auth';
+import { verifyAdminIdentity, adminDatabase } from '../_lib/admin-auth';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Cache-Control', 'no-store');
@@ -14,13 +14,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const user = await verifyAdminIdentity(req);
     if (!user) return res.status(403).json({ code: 'not_authorized_admin' });
 
-    // Login can work independently of privileged database access.
-    // Absence of service credentials disables administrative mutations.
-    const serviceKeyConfigured = Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
+    // A successful login is separate from privileged catalog/database access.
+    // Verify server credentials without exposing the key or any table rows.
+    let adminApiReady = false;
+    let adminApiDiagnostic = 'not_configured';
+    if (process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      try {
+        const { error } = await adminDatabase().from('products').select('id').limit(1);
+        adminApiReady = !error;
+        adminApiDiagnostic = error ? 'database_access_rejected' : 'ok';
+      } catch {
+        adminApiDiagnostic = 'server_credentials_invalid';
+      }
+    }
     return res.status(200).json({
       authenticated: true,
       userId: user.id,
-      adminApiConfigured: serviceKeyConfigured
+      adminApiReady,
+      adminApiDiagnostic
     });
   } catch (err) {
     console.error('Pulsar admin auth: identity verification failed', {
