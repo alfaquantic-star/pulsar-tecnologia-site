@@ -37,10 +37,11 @@ export const AuthModal: React.FC = () => {
   const [isNewCustomer, setIsNewCustomer] = useState(false);
 
   // Admin form fields
-  const [adminEmail, setAdminEmail] = useState('contatoviniciuscastro@gmail.com');
+  const [adminEmail, setAdminEmail] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [adminError, setAdminError] = useState('');
+  const [adminBusy, setAdminBusy] = useState(false);
 
   if (!isAuthModalOpen) return null;
 
@@ -55,12 +56,19 @@ export const AuthModal: React.FC = () => {
     });
   };
 
-  const handleAdminSubmit = (e: React.FormEvent) => {
+  const handleAdminSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (adminBusy) return;
+    setAdminBusy(true);
     setAdminError('');
-    const success = loginAsAdmin(adminEmail, adminPassword);
-    if (!success) {
-      setAdminError('E-mail ou senha incorretos. Acesso exclusivo do administrador.');
+    try {
+      const success = await loginAsAdmin(adminEmail, adminPassword);
+      setAdminPassword('');
+      if (!success) setAdminError('Login inválido ou conta não autorizada pelo Supabase.');
+    } catch {
+      setAdminError('Não foi possível verificar suas permissões.');
+    } finally {
+      setAdminBusy(false);
     }
   };
 
@@ -258,14 +266,11 @@ export const AuthModal: React.FC = () => {
                     required
                     value={adminEmail}
                     onChange={(e) => setAdminEmail(e.target.value)}
-                    placeholder="contatoviniciuscastro@gmail.com"
+                    placeholder="email@seudominio.com"
                     className="w-full bg-[#181820] text-white pl-10 pr-3 py-3 rounded-xl border border-white/10 focus:outline-none focus:border-purple-500 text-sm font-mono"
                   />
                   <Mail className="w-4 h-4 text-purple-400 absolute left-3.5 top-3.5" />
                 </div>
-                <span className="text-[10px] text-slate-500 mt-1 block">
-                  E-mail mestre: contatoviniciuscastro@gmail.com
-                </span>
               </div>
 
               <div>
@@ -301,7 +306,8 @@ export const AuthModal: React.FC = () => {
 
               <button
                 type="submit"
-                className="w-full py-3.5 rounded-2xl bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-sm shadow-xl shadow-purple-600/30 hover:scale-[1.01] active:scale-98 transition flex items-center justify-center gap-2"
+                disabled={adminBusy}
+                className="w-full py-3.5 rounded-2xl bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white font-extrabold text-sm shadow-xl shadow-purple-600/30 hover:scale-[1.01] active:scale-98 transition flex items-center justify-center gap-2"
               >
                 <ShieldCheck className="w-4 h-4" />
                 <span>Entrar no Painel Administrativo</span>
