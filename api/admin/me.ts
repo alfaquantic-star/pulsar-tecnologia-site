@@ -25,7 +25,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         mercadoPagoTokenConfigured: Boolean(process.env.MERCADO_PAGO_ACCESS_TOKEN?.trim()),
         webhookSecretConfigured: Boolean(process.env.MP_WEBHOOK_SECRET?.trim()),
         melhorEnvioTokenConfigured: Boolean(process.env.MELHOR_ENVIO_TOKEN?.trim()),
-        shippingOriginConfigured: /^\\d{8}$/.test((process.env.SHIPPING_ORIGIN_CEP || '').replace(/\D/g,'')),
+        shippingOriginConfigured: /^\d{8}$/.test((process.env.SHIPPING_ORIGIN_CEP || '').replace(/\D/g,'')),
         shippingSandboxEnabled: process.env.MELHOR_ENVIO_SANDBOX === 'true',
         idempotencySchemaPrepared: !schema.error,
         paymentPreferenceFlowVerified: false,
