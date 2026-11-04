@@ -562,7 +562,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       showToast('Não foi possível salvar as configurações: Supabase indisponível.', 'error');
       return;
     }
-    void updateSettingsInSupabase(merged).then((saved) => {
+    void updateSettingsInSupabase(newSettings).then((saved) => {
       if (saved) showToast('Configurações confirmadas no Supabase.', 'success');
       else {
         setSettings(previous);
