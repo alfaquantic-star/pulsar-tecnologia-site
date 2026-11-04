@@ -98,6 +98,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         Number(order.total_amount) !== Number(payment.transaction_amount)) {
       return res.status(422).json({ error: 'Order association or payment amount mismatch' });
     }
+    // A payment external_reference alone does not prove which Checkout Pro
+    // preference was used. Confirm the merchant order directly with MP and
+    // require that its preference belongs to this pending Pulsar order.
+    const merchantOrderId = payment.order?.id;
+    if (!/^[0-9]{1,24}$/.test(String(merchantOrderId || ''))) {
+      return res.status(422).json({ error: 'Merchant order link unavailable' });
+    }
+    const merchantResponse = await fetch(
+      'https://api.mercadopago.com/merchant_orders/' + encodeURIComponent(String(merchantOrderId)), {
+        headers: { Authorization: 'Bearer ' + token, Accept: 'application/json' },
+        signal: AbortSignal.timeout(8000), cache: 'no-store'
+      }
+    );
+    if (!merchantResponse.ok) {
+      return res.status(503).json({ error: 'Merchant order verification unavailable' });
+    }
+    const merchantOrder = await merchantResponse.json();
+    const payments = Array.isArray(merchantOrder.payments) ? merchantOrder.payments : [];
+    const paymentInOrder = payments.some((entry: any) =>
+      String(entry.id) === dataId &&
+      entry.status === 'approved' &&
+      entry.currency_id === 'BRL' &&
+      Number(entry.transaction_amount) === Number(payment.transaction_amount)
+    );
+    if (String(merchantOrder.id) !== String(merchantOrderId) ||
+        String(merchantOrder.preference_id) !== String(order.mercado_pago_preference_id) ||
+        merchantOrder.external_reference !== reference ||
+        !paymentInOrder) {
+      return res.status(422).json({ error: 'Payment preference association mismatch' });
+    }
     if (order.payment_status === 'approved') {
       return res.status(200).json({
         received: true, verified: true,
