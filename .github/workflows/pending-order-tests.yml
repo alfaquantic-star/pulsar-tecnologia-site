@@ -20,7 +20,7 @@ jobs:
         with:
           node-version: '22'
       - name: Offline pending-order tests
-        run: node --experimental-strip-types --test tests/pending-order.test.ts
+        run: node --experimental-strip-types --test tests/*.test.ts
 
   source-build:
     runs-on: ubuntu-latest
