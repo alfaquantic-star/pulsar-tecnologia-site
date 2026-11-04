@@ -1,4 +1,5 @@
 import { validateMercadoPagoSignature } from '../_lib/mp-webhook-signature.js';
+import { merchantOrderMatchesPayment } from '../_lib/mp-merchant-order.js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 /** Signed Mercado Pago notification verification. Order updates are restricted
@@ -115,17 +116,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(503).json({ error: 'Merchant order verification unavailable' });
     }
     const merchantOrder = await merchantResponse.json();
-    const payments = Array.isArray(merchantOrder.payments) ? merchantOrder.payments : [];
-    const paymentInOrder = payments.some((entry: any) =>
-      String(entry.id) === dataId &&
-      entry.status === 'approved' &&
-      entry.currency_id === 'BRL' &&
-      Number(entry.transaction_amount) === Number(payment.transaction_amount)
-    );
-    if (String(merchantOrder.id) !== String(merchantOrderId) ||
-        String(merchantOrder.preference_id) !== String(order.mercado_pago_preference_id) ||
-        merchantOrder.external_reference !== reference ||
-        !paymentInOrder) {
+    if (!merchantOrderMatchesPayment(
+      merchantOrder, String(merchantOrderId), dataId,
+      Number(payment.transaction_amount), order.mercado_pago_preference_id, reference
+    )) {
       return res.status(422).json({ error: 'Payment preference association mismatch' });
     }
     if (order.payment_status === 'approved') {
