@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { adminDatabase } from '../_lib/admin-auth';
+import { adminDatabase } from '../_lib/admin-auth.js';
 
 // Explicit allowlist: the public response must never expose integration secrets.
 const publicFields = [
