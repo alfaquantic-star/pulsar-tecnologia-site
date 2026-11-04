@@ -1,4 +1,4 @@
-name: Pending Order Safety Tests
+name: Checkout Safety and Build Tests
 
 on:
   pull_request:
@@ -19,5 +19,22 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Unit tests (no secrets or external services)
+      - name: Offline pending-order tests
         run: node --experimental-strip-types --test tests/pending-order.test.ts
+
+  source-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Build frontend
+        run: bun run build
+      - name: Check server entrypoint syntax and import graph
+        run: |
+          bunx esbuild api/checkout/validate.ts --bundle --platform=node --format=esm --packages=external --outfile=/tmp/validate.mjs
+          bunx esbuild api/mercadopago/create-preference.ts --bundle --platform=node --format=esm --packages=external --outfile=/tmp/checkout.mjs
+          bunx esbuild api/mercadopago/webhook.ts --bundle --platform=node --format=esm --packages=external --outfile=/tmp/webhook.mjs
+          bunx esbuild api/admin/me.ts --bundle --platform=node --format=esm --packages=external --outfile=/tmp/admin-me.mjs
