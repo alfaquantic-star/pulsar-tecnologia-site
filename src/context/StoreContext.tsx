@@ -552,14 +552,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         cache: 'no-store'
       });
       if (!response.ok) {
+        const diagnostic = await response.json().catch(() => ({}));
         await client.auth.signOut();
-        if (response.status === 503 || response.status === 500) {
-          showToast('Servidor de autenticação não configurado. Verifique SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY na Vercel Preview.', 'error');
-        } else if (response.status === 404) {
-          showToast('Rota /api/admin/me indisponível nesta implantação. Abra o Preview mais recente da branch de segurança.', 'error');
-        } else {
-          showToast('Conta autenticada, mas o backend recusou o acesso administrativo (403).', 'error');
-        }
+        const code = typeof diagnostic?.code === 'string' ? diagnostic.code : '';
+        const problems: Record<string, string> = {
+          missing_server_env: 'Faltam variáveis no Preview: SUPABASE_URL ou SUPABASE_SERVICE_ROLE_KEY.',
+          wrong_supabase_project: 'SUPABASE_URL na Vercel aponta para outro projeto. Use o projeto pulsartecnologia.',
+          invalid_or_expired_session: 'Sessão expirada ou inválida. Entre novamente.',
+          missing_session: 'O navegador não enviou a sessão ao servidor.',
+          not_authorized_admin: 'Conta autenticada, mas sem a permissão administrativa ou ID não corresponde ao configurado.',
+          server_auth_provider_error: 'Supabase recusou a validação no servidor. Confira a chave secreta e os logs da função.',
+          server_auth_runtime_failure: 'Falha ao iniciar autenticação na Vercel. Consulte Runtime Logs da função /api/admin/me.'
+        };
+        showToast(problems[code] || (response.status === 404
+          ? 'A rota /api/admin/me não existe nesta implantação. Abra o Preview mais recente.'
+          : 'Falha no login admin (HTTP ' + response.status + '). Consulte /api/admin/me nos Runtime Logs.'), 'error');
         return false;
       }
       const admin: CustomerProfile = {
