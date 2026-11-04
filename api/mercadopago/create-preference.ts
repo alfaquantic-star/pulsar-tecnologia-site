@@ -27,6 +27,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (action !== 'stage_order' && action !== 'create_test_preference') {
       return res.status(400).json({ error: 'Ação de teste inválida.' });
     }
+    // Fail closed BEFORE writing any pending order if the preference test
+    // is not explicitly enabled for a dedicated test seller.
+    if (action === 'create_test_preference' &&
+        (process.env.PULSAR_ENABLE_MP_TEST_CHECKOUT !== 'true' ||
+         !process.env.MERCADO_PAGO_TEST_ACCESS_TOKEN?.trim() ||
+         !/^\d+$/.test(process.env.PULSAR_MP_TEST_SELLER_ID || ''))) {
+      return res.status(503).json({ error: 'Conta vendedora de teste ainda não habilitada na Vercel. Nenhum pedido foi criado.' });
+    }
     if (body.coupon && String(body.coupon).trim()) {
       return res.status(422).json({ error: 'Cupons ainda não autorizados pelo backend. Retire o cupom para testar.' });
     }
@@ -96,15 +104,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
-    // Explicit separate opt-in; never fall back to the live token.
-    if (process.env.PULSAR_ENABLE_MP_TEST_CHECKOUT !== 'true') {
-      return res.status(503).json({ error: 'Criação de pagamentos de teste ainda não habilitada na Vercel.' });
-    }
-    const token = process.env.MERCADO_PAGO_TEST_ACCESS_TOKEN?.trim();
-    const sellerId = process.env.PULSAR_MP_TEST_SELLER_ID?.trim();
-    if (!token || !sellerId || !/^\d+$/.test(sellerId)) {
-      return res.status(503).json({ error: 'Credenciais da conta vendedora de TESTE incompletas.' });
-    }
+    // The dedicated seller test credentials have already been checked
+    // before any database write.
+    const token = process.env.MERCADO_PAGO_TEST_ACCESS_TOKEN!.trim();
+    const sellerId = process.env.PULSAR_MP_TEST_SELLER_ID!.trim();
     if (row.payment_status !== 'pending') {
       return res.status(409).json({ error: 'Pedido já não está pendente.' });
     }
