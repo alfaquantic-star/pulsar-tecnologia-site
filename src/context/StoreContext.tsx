@@ -654,6 +654,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     mercadoPagoInitPoint?: string;
     mercadoPagoPaymentId?: string;
   }): Promise<Order> => {
+    // Payment processing is not enabled until the server verifies stock, prices,
+    // shipping, discount and Mercado Pago confirmation. Do not create a paid
+    // order or collect payment-card details in the browser.
+    throw new Error('Checkout temporariamente indisponível. Pagamentos ainda estão em configuração.');
     const shipping = selectedShipping || {
       id: 'sedex-default',
       carrier: 'Melhor Envio / Correios',
@@ -751,6 +755,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     orderId: string,
     status: { paymentStatus?: OrderPaymentStatus; shippingStatus?: OrderShippingStatus; trackingCode?: string }
   ) => {
+    // Never allow local UI to assert that a payment was approved.
+    if (status.paymentStatus !== undefined) {
+      showToast('O pagamento só pode ser confirmado pelo webhook verificado.', 'error');
+      return;
+    }
     setOrders((prev) =>
       prev.map((ord) => {
         if (ord.id !== orderId) return ord;
@@ -775,12 +784,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   // Simulate Mercado Pago Webhook approval in test environment
-  const simulateWebhookPaymentApproval = (orderId: string) => {
-    updateOrderStatus(orderId, {
-      paymentStatus: 'approved',
-      shippingStatus: 'processing'
-    });
-    showToast('⚡ Webhook Mercado Pago: Pagamento PIX aprovado com sucesso!', 'success');
+  const simulateWebhookPaymentApproval = (_orderId: string) => {
+    showToast('Simulação de aprovação desativada: use somente notificações verificadas do Mercado Pago.', 'error');
   };
 
   return (
