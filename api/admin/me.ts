@@ -14,6 +14,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const user = await verifyAdminIdentity(req);
     if (!user) return res.status(403).json({ code: 'not_authorized_admin' });
 
+    // Read-only checkout readiness diagnostics. Reuse the existing admin
+    // endpoint instead of adding another Vercel function.
+    if (req.query.check === 'checkout') {
+      const db = adminDatabase();
+      const schema = await db.from('orders')
+        .select('checkout_idempotency_key,mercado_pago_preference_id,shipping_service_id').limit(0);
+      const checks = {
+        previewDeployment: process.env.VERCEL_ENV === 'preview',
+        mercadoPagoTokenConfigured: Boolean(process.env.MERCADO_PAGO_ACCESS_TOKEN?.trim()),
+        webhookSecretConfigured: Boolean(process.env.MP_WEBHOOK_SECRET?.trim()),
+        melhorEnvioTokenConfigured: Boolean(process.env.MELHOR_ENVIO_TOKEN?.trim()),
+        shippingOriginConfigured: /^\\d{8}$/.test((process.env.SHIPPING_ORIGIN_CEP || '').replace(/\D/g,'')),
+        shippingSandboxEnabled: process.env.MELHOR_ENVIO_SANDBOX === 'true',
+        idempotencySchemaPrepared: !schema.error,
+        paymentPreferenceFlowVerified: false,
+        webhookOrderAssociationVerified: false,
+        productionRlsCutoverVerified: false
+      };
+      return res.status(200).json({
+        readyForPayments: false, checks,
+        message: 'Diagnóstico somente leitura. Nenhum pedido, pagamento ou mudança de permissão foi realizado.'
+      });
+    }
+
     // A successful login is separate from privileged catalog/database access.
     // Verify server credentials without exposing the key or any table rows.
     let adminApiReady = false;
