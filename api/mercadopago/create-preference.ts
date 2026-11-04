@@ -31,7 +31,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(422).json({ error: 'Cupons ainda não autorizados pelo backend. Retire o cupom para testar.' });
     }
     const key = body.idempotencyKey;
-    if (typeof key !== 'string' || !/^[0-9a-fA-F-]{36}$/.test(key)) {
+    if (typeof key !== 'string' || !/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(key)) {
       return res.status(400).json({ error: 'Identificador de tentativa inválido.' });
     }
     // This re-reads live product/kit price, consolidated stock AND re-quotes
