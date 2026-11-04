@@ -55,10 +55,10 @@ export const CheckoutModal: React.FC = () => {
   const [countdown, setCountdown] = useState<number>(3);
 
   // Customer Form
-  const [fullName, setFullName] = useState(currentUser?.fullName || 'Vinicius Castro');
-  const [email, setEmail] = useState(currentUser?.email || 'contatoviniciuscastro@gmail.com');
-  const [cpf, setCpf] = useState(currentUser?.cpf || '123.456.789-00');
-  const [whatsapp, setWhatsapp] = useState(currentUser?.whatsapp || '(11) 98765-4321');
+  const [fullName, setFullName] = useState(currentUser?.fullName || '');
+  const [email, setEmail] = useState(currentUser?.email || '');
+  const [cpf, setCpf] = useState(currentUser?.cpf || '');
+  const [whatsapp, setWhatsapp] = useState(currentUser?.whatsapp || '');
 
   // Address Form
   const defaultAddr = currentUser?.addresses[0];
@@ -314,7 +314,7 @@ export const CheckoutModal: React.FC = () => {
                 {step === 'error' && 'Erro no Processamento'}
               </h3>
               <p className="text-xs text-slate-400">
-                Pulsar Tecnologia • Ambiente Criptografado 256 bits
+                Pulsar Tecnologia • Prévia de checkout (sem cobrança)
               </p>
             </div>
           </div>
@@ -732,106 +732,29 @@ export const CheckoutModal: React.FC = () => {
                           <span>Redirecionamento Seguro Mercado Pago</span>
                         </div>
                         <p className="text-[11px] text-slate-400 leading-relaxed">
-                          Ao clicar no botão abaixo, geramos a transação criptografada com suas credenciais oficiais e você será <strong>redirecionado automaticamente para a página de pagamento do Mercado Pago</strong>.
+                          O checkout hospedado do Mercado Pago será habilitado depois de verificar preços, frete, pedidos e webhooks no servidor. Nenhuma cobrança será criada neste Preview.
                         </p>
                       </div>
                     )}
 
-                    {/* Credit Card Inputs */}
+                    {/* Card data must only be collected by a PCI-compliant
+                        Mercado Pago hosted checkout, never a custom form. */}
                     {paymentMethod === 'credit_card' && (
-                      <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-3 text-xs">
-                        <div>
-                          <label className="text-[11px] text-slate-400 font-semibold block mb-1">
-                            Número do Cartão:
-                          </label>
-                          <input
-                            type="text"
-                            value={cardNumber}
-                            onChange={(e) => setCardNumber(e.target.value)}
-                            className="w-full bg-[#181820] text-xs text-white px-3 py-2 rounded-lg border border-white/10 focus:outline-none focus:border-[#FF5500]"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="text-[11px] text-slate-400 font-semibold block mb-1">
-                            Nome Impresso no Cartão:
-                          </label>
-                          <input
-                            type="text"
-                            value={cardHolder}
-                            onChange={(e) => setCardHolder(e.target.value.toUpperCase())}
-                            className="w-full bg-[#181820] text-xs text-white px-3 py-2 rounded-lg border border-white/10 focus:outline-none focus:border-[#FF5500]"
-                          />
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="text-[11px] text-slate-400 font-semibold block mb-1">
-                              Validade (MM/AA):
-                            </label>
-                            <input
-                              type="text"
-                              value={cardExpiry}
-                              onChange={(e) => setCardExpiry(e.target.value)}
-                              className="w-full bg-[#181820] text-xs text-white px-3 py-2 rounded-lg border border-white/10 focus:outline-none focus:border-[#FF5500]"
-                            />
-                          </div>
-
-                          <div>
-                            <label className="text-[11px] text-slate-400 font-semibold block mb-1">
-                              CVV:
-                            </label>
-                            <input
-                              type="text"
-                              value={cardCvv}
-                              maxLength={4}
-                              onChange={(e) => setCardCvv(e.target.value)}
-                              className="w-full bg-[#181820] text-xs text-white px-3 py-2 rounded-lg border border-white/10 focus:outline-none focus:border-[#FF5500]"
-                            />
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="text-[11px] text-slate-400 font-semibold block mb-1">
-                            Número de Parcelas:
-                          </label>
-                          <select
-                            value={installments || 1}
-                            onChange={(e) => setInstallments(parseInt(e.target.value, 10) || 1)}
-                            className="w-full bg-[#181820] text-xs text-white px-3 py-2 rounded-lg border border-white/10 focus:outline-none focus:border-[#FF5500]"
-                          >
-                            <option value={1}>1x de R$ {orderTotal.toFixed(2)} (sem juros)</option>
-                            <option value={2}>2x de R$ {(orderTotal / 2).toFixed(2)} (sem juros)</option>
-                            <option value={3}>3x de R$ {(orderTotal / 3).toFixed(2)} (sem juros)</option>
-                            <option value={6}>6x de R$ {(orderTotal / 6 * 1.03).toFixed(2)}</option>
-                            <option value={12}>12x de R$ {(orderTotal / 12 * 1.06).toFixed(2)}</option>
-                          </select>
-                        </div>
+                      <div className="p-4 rounded-xl bg-amber-950/30 border border-amber-500/30 text-xs text-amber-200">
+                        Pagamento por cartão será disponibilizado pelo checkout hospedado do Mercado Pago.
+                        Não informe dados do cartão nesta página.
                       </div>
                     )}
 
                     {/* Submit Button */}
                     <button
                       type="submit"
-                      disabled={isSubmitting}
-                      className="w-full py-4 rounded-2xl bg-gradient-to-r from-[#FF5500] to-[#FFAA00] text-black font-black text-sm shadow-xl shadow-[#FF5500]/30 hover:shadow-[#FF5500]/50 hover:scale-[1.01] active:scale-95 transition flex items-center justify-center gap-2 disabled:opacity-50"
+                      disabled
+                      title="Checkout bloqueado até finalizar a validação de preços, estoque, frete e webhooks no servidor."
+                      className="w-full py-4 rounded-2xl bg-slate-700 text-slate-200 font-black text-sm opacity-80 cursor-not-allowed transition flex items-center justify-center gap-2"
                     >
-                      {isSubmitting ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin text-black" />
-                          <span>Conectando ao Mercado Pago...</span>
-                        </>
-                      ) : paymentMethod === 'mercadopago' ? (
-                        <>
-                          <ExternalLink className="w-4 h-4 text-black" />
-                          <span>Pagar com Mercado Pago (R$ {orderTotal.toFixed(2)})</span>
-                        </>
-                      ) : (
-                        <>
-                          <Lock className="w-4 h-4 text-black" />
-                          <span>Confirmar Pedido de R$ {orderTotal.toFixed(2)}</span>
-                        </>
-                      )}
+                      <Lock className="w-4 h-4" />
+                      <span>Pagamento indisponível — integração em validação</span>
                     </button>
                   </div>
                 </div>
