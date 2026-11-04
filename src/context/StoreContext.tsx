@@ -562,9 +562,21 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       showToast('Não foi possível salvar as configurações: Supabase indisponível.', 'error');
       return;
     }
+    const supportedFields = new Set([
+      'logoUrl', 'heroTitle', 'heroTitleHighlight', 'heroSubtitle',
+      'announcementBarText', 'whatsappNumber', 'originCep', 'mercadoPagoPublicKey'
+    ]);
+    const hasUnsupportedChanges = Object.entries(newSettings)
+      .some(([key, value]) => !supportedFields.has(key) &&
+        JSON.stringify(value) !== JSON.stringify((previous as unknown as Record<string, unknown>)[key]));
     void updateSettingsInSupabase(newSettings).then((saved) => {
-      if (saved) showToast('Configurações confirmadas no Supabase.', 'success');
-      else {
+      if (saved) {
+        if (hasUnsupportedChanges) {
+          showToast('Campos compatíveis salvos no Supabase. Nome da loja e outros campos ainda são apenas prévia e não foram publicados.', 'info');
+        } else {
+          showToast('Configurações confirmadas no Supabase.', 'success');
+        }
+      } else {
         setSettings(previous);
         showToast('Falha ao gravar configurações. Alteração revertida.', 'error');
       }
