@@ -189,14 +189,24 @@ export async function fetchProductsFromSupabase(): Promise<Product[] | null> {
   if (!client) return null;
 
   try {
-    const { data, error } = await client
-      .from('products')
-      .select('id,name,slug,short_description,detailed_description,sale_price,promo_price,stock,track_stock,sku,category,chip_type,height_cm,width_cm,length_cm,weight_grams,is_active,is_featured,is_best_seller,rating,reviews_count,badge,images,created_at,updated_at')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.warn('Erro ao buscar produtos do Supabase:', error.message);
-      return null;
+    // Admin may inspect inactive items and cost only after the server checks
+    // Supabase Auth and app_metadata. Visitors receive an active-only,
+    // column-restricted catalog protected by RLS.
+    const { data: { session } } = await client.auth.getSession();
+    const adminResult = session ? await adminApi('/api/admin/catalog?table=products', 'GET') : null;
+    let data: any[] | null = null;
+    if (adminResult?.ok && Array.isArray(adminResult.data)) {
+      data = adminResult.data;
+    } else {
+      const publicResult = await client.from('products')
+        .select('id,name,slug,short_description,detailed_description,sale_price,promo_price,stock,track_stock,sku,category,chip_type,height_cm,width_cm,length_cm,weight_grams,is_active,is_featured,is_best_seller,rating,reviews_count,badge,images,created_at,updated_at')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false });
+      if (publicResult.error) {
+        console.warn('Erro ao buscar produtos do Supabase:', publicResult.error.message);
+        return null;
+      }
+      data = publicResult.data;
     }
 
     return (data || []).map((row) => ({
@@ -327,14 +337,21 @@ export async function fetchKitsFromSupabase(): Promise<Kit[] | null> {
   if (!client) return null;
 
   try {
-    const { data, error } = await client
-      .from('kits')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.warn('Erro ao buscar combos do Supabase:', error.message);
-      return null;
+    const { data: { session } } = await client.auth.getSession();
+    const adminResult = session ? await adminApi('/api/admin/catalog?table=kits', 'GET') : null;
+    let data: any[] | null = null;
+    if (adminResult?.ok && Array.isArray(adminResult.data)) {
+      data = adminResult.data;
+    } else {
+      const publicResult = await client.from('kits')
+        .select('*')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false });
+      if (publicResult.error) {
+        console.warn('Erro ao buscar combos do Supabase:', publicResult.error.message);
+        return null;
+      }
+      data = publicResult.data;
     }
 
     return (data || []).map((row) => ({
