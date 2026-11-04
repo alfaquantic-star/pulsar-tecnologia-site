@@ -145,10 +145,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   });
 
   // 4. Persistent Orders
-  const [orders, setOrders] = useState<Order[]>(() => {
-    const saved = localStorage.getItem('pulsar_orders');
-    return saved ? JSON.parse(saved) : INITIAL_ORDERS;
-  });
+  // Orders may contain personal information: never restore cached orders from localStorage.
+  const [orders, setOrders] = useState<Order[]>([]);
 
   // 5. Persistent Settings (ensuring clean headline)
   const [settings, setSettings] = useState<SiteSettings>(() => {
@@ -164,9 +162,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   });
 
   // 6. User Auth State
+  // Browser-controlled localStorage cannot grant administrator privileges.
   const [currentUser, setCurrentUser] = useState<CustomerProfile | null>(() => {
     const saved = localStorage.getItem('pulsar_user');
-    return saved ? JSON.parse(saved) : null;
+    if (!saved) return null;
+    try {
+      const candidate = JSON.parse(saved) as CustomerProfile;
+      return candidate.role === 'admin' ? null : candidate;
+    } catch { return null; }
   });
 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
@@ -218,7 +221,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (remoteKits && remoteKits.length > 0) {
         setKits(remoteKits);
       }
-      if (remoteOrders && remoteOrders.length > 0) {
+      if (remoteOrders !== null) {
         setOrders(remoteOrders);
       }
       if (remoteSettings) {
@@ -267,8 +270,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [cart]);
 
   useEffect(() => {
-    localStorage.setItem('pulsar_orders', JSON.stringify(orders));
-  }, [orders]);
+    // Remove legacy order cache immediately; order/customer PII belongs server-side.
+    localStorage.removeItem('pulsar_orders');
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('pulsar_settings', JSON.stringify(settings));
@@ -636,6 +640,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       };
       setCurrentUser(admin);
       setIsAuthModalOpen(false);
+      // Load complete admin catalog (including inactive products) only now that
+      // the Supabase session has passed server-side admin authorization.
+      void syncWithSupabase();
       if (privileges.adminApiReady === false) {
         const detail = privileges.adminApiDiagnostic === 'not_configured'
           ? 'SUPABASE_SERVICE_ROLE_KEY ausente no Preview.'
