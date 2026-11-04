@@ -503,11 +503,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const addKit = (kitData: Omit<Kit, 'id'>) => {
     const id = 'kit-' + Math.random().toString(36).substring(2, 9);
     const newKit: Kit = { ...kitData, id };
-    setKits((prev) => [newKit, ...prev]);
-    showToast(`Kit promocional "${newKit.name}" criado!`, 'success');
-    if (isSupabaseConfigured()) {
-      upsertKitInSupabase(newKit).catch((err) => console.warn('Supabase kit sync error:', err));
+    if (!isSupabaseConfigured()) {
+      showToast('Supabase indisponível. Kit não foi criado.', 'error');
+      return;
     }
+    void upsertKitInSupabase(newKit).then((saved) => {
+      if (saved) {
+        setKits((prev) => [newKit, ...prev]);
+        showToast('Kit cadastrado e confirmado no Supabase.', 'success');
+      } else showToast('Falha ao criar kit: ' + (getAdminApiLastError() || 'sem resposta da API'), 'error');
+    }).catch(() => showToast('Falha de conexão ao cadastrar kit.', 'error'));
   };
 
   const updateKit = (id: string, partial: Partial<Kit>) => {
@@ -535,11 +540,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const deleteKit = (id: string) => {
-    setKits((prev) => prev.filter((k) => k.id !== id));
-    showToast('Kit removido com sucesso.', 'info');
-    if (isSupabaseConfigured()) {
-      deleteKitInSupabase(id).catch((err) => console.warn('Supabase kit delete error:', err));
+    if (!isSupabaseConfigured()) {
+      showToast('Supabase indisponível. Kit não foi removido.', 'error');
+      return;
     }
+    void deleteKitInSupabase(id).then((saved) => {
+      if (saved) {
+        setKits((prev) => prev.filter((k) => k.id !== id));
+        showToast('Kit removido do Supabase.', 'success');
+      } else showToast('Falha ao remover kit: ' + (getAdminApiLastError() || 'sem resposta da API'), 'error');
+    }).catch(() => showToast('Falha de conexão ao remover kit.', 'error'));
   };
 
   // Settings
