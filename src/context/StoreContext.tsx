@@ -14,7 +14,8 @@ import {
   createOrderInSupabase,
   updateOrderStatusInSupabase,
   fetchSettingsFromSupabase,
-  updateSettingsInSupabase
+  updateSettingsInSupabase,
+  getSupabaseClient
 } from '../lib/supabase';
 
 interface Toast {
@@ -80,7 +81,7 @@ interface StoreContextType {
   currentUser: CustomerProfile | null;
   setCurrentUser: (user: CustomerProfile | null) => void;
   login: (email: string, role?: 'customer' | 'admin') => boolean;
-  loginAsAdmin: (email: string, pass: string) => boolean;
+  loginAsAdmin: (email: string, pass: string) => Promise<boolean>;
   loginAsCustomer: (data: { email: string; fullName?: string; whatsapp?: string; cpf?: string }) => boolean;
   logout: () => void;
   switchUserRole: () => void;
@@ -530,9 +531,48 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   // Auth Operations
-  const loginAsAdmin = (_email: string, _pass: string): boolean => {
-    showToast('Acesso administrativo desativado temporariamente. Configure autenticação Supabase e autorização por servidor antes de habilitar.', 'error');
-    return false;
+  const loginAsAdmin = async (email: string, pass: string): Promise<boolean> => {
+    const client = getSupabaseClient();
+    if (!client) {
+      showToast('Configure o Supabase antes de acessar o painel.', 'error');
+      return false;
+    }
+    try {
+      const { data, error } = await client.auth.signInWithPassword({ email: email.trim(), password: pass });
+      if (error || !data.session?.access_token || !data.user) {
+        showToast('Não foi possível autenticar o usuário.', 'error');
+        return false;
+      }
+      // The API verifies the JWT and server-managed app_metadata.role.
+      // Merely logging into Supabase Auth is NOT sufficient for admin access.
+      const response = await fetch('/api/admin/me', {
+        headers: { Authorization: 'Bearer ' + data.session.access_token },
+        cache: 'no-store'
+      });
+      if (!response.ok) {
+        await client.auth.signOut();
+        showToast('Conta sem autorização administrativa.', 'error');
+        return false;
+      }
+      const admin: CustomerProfile = {
+        id: data.user.id,
+        email: data.user.email || email.trim(),
+        fullName: data.user.email?.split('@')[0] || 'Administrador',
+        cpf: '',
+        whatsapp: '',
+        role: 'admin',
+        createdAt: data.user.created_at,
+        addresses: []
+      };
+      setCurrentUser(admin);
+      setIsAuthModalOpen(false);
+      showToast('Autenticação administrativa verificada.', 'success');
+      return true;
+    } catch {
+      await client.auth.signOut().catch(() => {});
+      showToast('Não foi possível validar a sessão administrativa.', 'error');
+      return false;
+    }
   };
 
   const loginAsCustomer = (data: { email: string; fullName?: string; whatsapp?: string; cpf?: string }): boolean => {
@@ -574,6 +614,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const logout = () => {
+    if (currentUser?.role === 'admin') {
+      void getSupabaseClient()?.auth.signOut();
+    }
     setCurrentUser(null);
     if (currentView === 'admin') {
       setCurrentView('home');
@@ -582,15 +625,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   const switchUserRole = () => {
-    if (!currentUser || currentUser.role !== 'admin') {
-      openAuthModal('admin');
-      return;
-    }
-    // Admin toggling to customer view to test shopping experience
-    const newRole = currentUser.role === 'admin' ? 'customer' : 'admin';
-    const updated = { ...currentUser, role: newRole as 'customer' | 'admin' };
-    setCurrentUser(updated);
-    showToast(`Modo de visualização: ${newRole === 'admin' ? 'Painel Administrador' : 'Visão Loja / Cliente'}.`, 'info');
+    // Never promote, demote, or persist an admin role from browser UI.
+    if (currentUser?.role !== 'admin') openAuthModal('admin');
+    else setCurrentView('home');
   };
 
   const updateUserProfile = (data: Partial<CustomerProfile>) => {
