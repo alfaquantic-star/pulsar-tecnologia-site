@@ -540,7 +540,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       const { data, error } = await client.auth.signInWithPassword({ email: email.trim(), password: pass });
       if (error || !data.session?.access_token || !data.user) {
-        showToast('Não foi possível autenticar o usuário.', 'error');
+        showToast(error?.message === 'Invalid login credentials'
+          ? 'Senha ou e-mail inválidos. Confira os dados cadastrados no Supabase Auth.'
+          : 'Não foi possível entrar no Supabase Auth. Verifique sua senha e conexão.', 'error');
         return false;
       }
       // The API verifies the JWT and server-managed app_metadata.role.
@@ -551,7 +553,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       });
       if (!response.ok) {
         await client.auth.signOut();
-        showToast('Conta sem autorização administrativa.', 'error');
+        if (response.status === 503 || response.status === 500) {
+          showToast('Servidor de autenticação não configurado. Verifique SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY na Vercel Preview.', 'error');
+        } else if (response.status === 404) {
+          showToast('Rota /api/admin/me indisponível nesta implantação. Abra o Preview mais recente da branch de segurança.', 'error');
+        } else {
+          showToast('Conta autenticada, mas o backend recusou o acesso administrativo (403).', 'error');
+        }
         return false;
       }
       const admin: CustomerProfile = {
