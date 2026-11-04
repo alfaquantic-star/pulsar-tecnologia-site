@@ -10,6 +10,37 @@ import { Product, Kit, Order, SiteSettings, CustomerProfile, OrderPaymentStatus,
 const STORAGE_URL_KEY = 'pulsar_supabase_url';
 const STORAGE_KEY_KEY = 'pulsar_supabase_anon_key';
 
+
+/** Protected administrative requests; no direct browser write to public tables. */
+async function adminApi(path: string, method: 'GET'|'POST'|'PATCH'|'DELETE', body?: unknown): Promise<{ ok: boolean; status: number; data?: any }> {
+  const client = getSupabaseClient();
+  if (!client) return { ok: false, status: 503 };
+  const { data: { session } } = await client.auth.getSession();
+  if (!session?.access_token) return { ok: false, status: 403 };
+  try {
+    const res = await fetch(path, {
+      method,
+      headers: {
+        Authorization: 'Bearer ' + session.access_token,
+        ...(body === undefined ? {} : { 'Content-Type': 'application/json' })
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      cache: 'no-store'
+    });
+    const json = await res.json().catch(() => ({}));
+    return { ok: res.ok, status: res.status, data: json.data };
+  } catch {
+    return { ok: false, status: 503 };
+  }
+}
+async function saveAdminCatalog(table: 'products'|'kits', id: string, row: Record<string, unknown>) {
+  const endpoint = '/api/admin/catalog?table=' + table + '&id=' + encodeURIComponent(id);
+  const update = await adminApi(endpoint, 'PATCH', Object.fromEntries(Object.entries(row).filter(([key]) => key !== 'id')));
+  if (update.ok) return true;
+  if (update.status !== 404) return false;
+  return (await adminApi('/api/admin/catalog?table=' + table, 'POST', row)).ok;
+}
+
 /**
  * Retrieves the effective Supabase URL and Anon Key.
  * Checks localStorage overrides first (configured in Admin Panel),
@@ -148,7 +179,7 @@ export async function fetchProductsFromSupabase(): Promise<Product[] | null> {
   try {
     const { data, error } = await client
       .from('products')
-      .select('*')
+      .select('id,name,slug,short_description,detailed_description,sale_price,promo_price,stock,track_stock,sku,category,chip_type,height_cm,width_cm,length_cm,weight_grams,is_active,is_featured,is_best_seller,rating,reviews_count,badge,images,created_at,updated_at')
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -223,12 +254,7 @@ export async function upsertProductInSupabase(prod: Product): Promise<boolean> {
       updated_at: new Date().toISOString(),
     };
 
-    const { error } = await client.from('products').upsert(row, { onConflict: 'id' });
-    if (error) {
-      console.warn('Erro ao sincronizar produto no Supabase:', error.message);
-      return false;
-    }
-    return true;
+    return await saveAdminCatalog('products', prod.id, row);
   } catch (err) {
     console.warn('Falha no upsertProductInSupabase:', err);
     return false;
@@ -240,8 +266,7 @@ export async function deleteProductInSupabase(productId: string): Promise<boolea
   if (!client) return false;
 
   try {
-    const { error } = await client.from('products').delete().eq('id', productId);
-    return !error;
+    return (await adminApi('/api/admin/catalog?table=products&id=' + encodeURIComponent(productId), 'DELETE')).ok;
   } catch {
     return false;
   }
@@ -309,8 +334,7 @@ export async function upsertKitInSupabase(kit: Kit): Promise<boolean> {
       updated_at: new Date().toISOString(),
     };
 
-    const { error } = await client.from('kits').upsert(row, { onConflict: 'id' });
-    return !error;
+    return await saveAdminCatalog('kits', kit.id, row);
   } catch {
     return false;
   }
@@ -321,8 +345,7 @@ export async function deleteKitInSupabase(kitId: string): Promise<boolean> {
   if (!client) return false;
 
   try {
-    const { error } = await client.from('kits').delete().eq('id', kitId);
-    return !error;
+    return (await adminApi('/api/admin/catalog?table=kits&id=' + encodeURIComponent(kitId), 'DELETE')).ok;
   } catch {
     return false;
   }
@@ -337,15 +360,9 @@ export async function fetchOrdersFromSupabase(): Promise<Order[] | null> {
   if (!client) return null;
 
   try {
-    const { data, error } = await client
-      .from('orders')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.warn('Erro ao buscar pedidos do Supabase:', error.message);
-      return null;
-    }
+    const result = await adminApi('/api/admin/orders', 'GET');
+    if (!result.ok) return null;
+    const data = result.data || [];
 
     return (data || []).map((row) => ({
       id: row.id,
@@ -380,45 +397,10 @@ export async function fetchOrdersFromSupabase(): Promise<Order[] | null> {
   }
 }
 
-export async function createOrderInSupabase(order: Order): Promise<boolean> {
-  const client = getSupabaseClient();
-  if (!client) return false;
-
-  try {
-    const row = {
-      id: order.id,
-      order_number: order.orderNumber,
-      customer_id: order.customerId || null,
-      customer_name: order.customerName,
-      customer_email: order.customerEmail,
-      customer_phone: order.customerWhatsapp,
-      customer_cpf: order.customerCpf,
-      items: order.items,
-      subtotal: order.subtotal,
-      discount_amount: order.discount,
-      shipping_price: order.shipping.price,
-      total_amount: order.total,
-      payment_method: order.paymentMethod,
-      payment_status: order.paymentStatus,
-      shipping_carrier: order.shipping.carrier,
-      shipping_service: order.shipping.service,
-      tracking_code: order.trackingCode || null,
-      shipping_address: order.shippingAddress,
-      pix_qr_code: order.pixQrCodeUrl || null,
-      created_at: order.createdAt || new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-
-    const { error } = await client.from('orders').insert(row);
-    if (error) {
-      console.warn('Erro ao inserir pedido no Supabase:', error.message);
-      return false;
-    }
-    return true;
-  } catch (err) {
-    console.warn('Falha no createOrderInSupabase:', err);
-    return false;
-  }
+export async function createOrderInSupabase(_order: Order): Promise<boolean> {
+  // Checkout must calculate price/shipping on the server first.
+  // A client-side order must never be persisted or accepted as paid.
+  return false;
 }
 
 export async function updateOrderStatusInSupabase(
@@ -426,25 +408,11 @@ export async function updateOrderStatusInSupabase(
   paymentStatus?: OrderPaymentStatus,
   trackingCode?: string
 ): Promise<boolean> {
-  const client = getSupabaseClient();
-  if (!client) return false;
-
-  try {
-    const payload: Record<string, unknown> = {
-      updated_at: new Date().toISOString(),
-    };
-    if (paymentStatus) {
-      payload.payment_status = paymentStatus;
-    }
-    if (trackingCode !== undefined) {
-      payload.tracking_code = trackingCode;
-    }
-
-    const { error } = await client.from('orders').update(payload).eq('id', orderId);
-    return !error;
-  } catch {
-    return false;
-  }
+  if (paymentStatus !== undefined) return false; // only a verified payment webhook may change this.
+  if (trackingCode === undefined) return false;
+  return (await adminApi('/api/admin/orders?id=' + encodeURIComponent(orderId), 'PATCH', {
+    tracking_code: trackingCode
+  })).ok;
 }
 
 // -----------------------------------------------------------------------------
@@ -452,18 +420,11 @@ export async function updateOrderStatusInSupabase(
 // -----------------------------------------------------------------------------
 
 export async function fetchSettingsFromSupabase(): Promise<Partial<SiteSettings> | null> {
-  const client = getSupabaseClient();
-  if (!client) return null;
-
   try {
-    const { data, error } = await client
-      .from('site_settings')
-      .select('*')
-      .eq('id', 'default')
-      .maybeSingle();
-
-    if (error || !data) return null;
-
+    const response = await fetch('/api/storefront/settings', { cache: 'no-store' });
+    if (!response.ok) return null;
+    const { data } = await response.json();
+    if (!data) return null;
     return {
       logoUrl: data.logo_url,
       heroTitle: data.hero_title,
@@ -473,37 +434,24 @@ export async function fetchSettingsFromSupabase(): Promise<Partial<SiteSettings>
       whatsappNumber: data.whatsapp_number,
       originCep: data.origin_cep,
       mercadoPagoPublicKey: data.mercado_pago_public_key,
-      melhorEnvioToken: undefined, // Token nunca deve vir de tabela pública
+      melhorEnvioToken: undefined
     };
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 export async function updateSettingsInSupabase(settings: Partial<SiteSettings>): Promise<boolean> {
-  const client = getSupabaseClient();
-  if (!client) return false;
-
-  try {
-    const row = {
-      id: 'default',
-      logo_url: settings.logoUrl,
-      hero_title: settings.heroTitle,
-      hero_title_highlight: settings.heroTitleHighlight,
-      hero_subtitle: settings.heroSubtitle,
-      announcement_bar_text: settings.announcementBarText,
-      whatsapp_number: settings.whatsappNumber,
-      origin_cep: settings.originCep,
-      mercado_pago_public_key: settings.mercadoPagoPublicKey,
-      // Tokens ficam exclusivamente em variáveis protegidas na Vercel.
-      updated_at: new Date().toISOString(),
-    };
-
-    const { error } = await client.from('site_settings').upsert(row, { onConflict: 'id' });
-    return !error;
-  } catch {
-    return false;
-  }
+  const row = {
+    logo_url: settings.logoUrl,
+    hero_title: settings.heroTitle,
+    hero_title_highlight: settings.heroTitleHighlight,
+    hero_subtitle: settings.heroSubtitle,
+    announcement_bar_text: settings.announcementBarText,
+    whatsapp_number: settings.whatsappNumber,
+    origin_cep: settings.originCep,
+    mercado_pago_public_key: settings.mercadoPagoPublicKey
+  };
+  const payload = Object.fromEntries(Object.entries(row).filter(([,value]) => value !== undefined));
+  return (await adminApi('/api/admin/settings', 'PATCH', payload)).ok;
 }
 
 // -----------------------------------------------------------------------------
