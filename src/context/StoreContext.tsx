@@ -569,6 +569,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           : 'Falha no login admin (HTTP ' + response.status + '). Consulte /api/admin/me nos Runtime Logs.'), 'error');
         return false;
       }
+      const privileges = await response.json().catch(() => ({}));
       const admin: CustomerProfile = {
         id: data.user.id,
         email: data.user.email || email.trim(),
@@ -581,7 +582,16 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       };
       setCurrentUser(admin);
       setIsAuthModalOpen(false);
-      showToast('Autenticação administrativa verificada.', 'success');
+      if (privileges.adminApiReady === false) {
+        const detail = privileges.adminApiDiagnostic === 'not_configured'
+          ? 'SUPABASE_SERVICE_ROLE_KEY ausente no Preview.'
+          : privileges.adminApiDiagnostic === 'database_access_rejected'
+          ? 'SUPABASE_SERVICE_ROLE_KEY rejeitada pelo banco. Confira se a chave é secreta e pertence ao projeto pulsartecnologia.'
+          : 'Credencial administrativa inválida na Vercel Preview.';
+        showToast('Login autorizado, mas alterações no painel estão indisponíveis: ' + detail, 'error');
+      } else {
+        showToast('Autenticação administrativa verificada.', 'success');
+      }
       return true;
     } catch {
       await client.auth.signOut().catch(() => {});
