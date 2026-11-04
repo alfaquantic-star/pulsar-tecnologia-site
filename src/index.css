@@ -1,0 +1,110 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Montserrat', sans-serif;
+    background-color: #09090B;
+    color: #F1F5F9;
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, .font-display {
+    font-family: 'Montserrat', sans-serif;
+    letter-spacing: -0.02em;
+  }
+}
+
+/* Pulsar glowing and metallic accents */
+.text-gradient-pulsar {
+  background: linear-gradient(135deg, #FFAA00 0%, #FF5500 50%, #FF2200 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.text-gradient-silver {
+  background: linear-gradient(180deg, #FFFFFF 0%, #E2E8F0 50%, #94A3B8 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.border-pulsar-glow {
+  box-shadow: 0 0 25px -5px rgba(255, 85, 0, 0.35);
+}
+
+.border-pulsar-glow-sm {
+  box-shadow: 0 0 15px -3px rgba(255, 85, 0, 0.25);
+}
+
+.bg-radial-pulsar {
+  background: radial-gradient(circle at 50% 0%, rgba(255, 85, 0, 0.15), transparent 70%);
+}
+
+.bg-radial-card {
+  background: radial-gradient(circle at 80% 20%, rgba(255, 170, 0, 0.08), transparent 60%);
+}
+
+/* Glassmorphism */
+.glass-panel {
+  background: rgba(18, 18, 23, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-panel-active {
+  background: rgba(26, 26, 35, 0.85);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 85, 0, 0.4);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #09090B;
+}
+::-webkit-scrollbar-thumb {
+  background: #272732;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #FF5500;
+}
+
+/* NFC Wave Animation */
+@keyframes nfcPulse {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 0.3;
+  }
+  100% {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+}
+
+.animate-nfc-pulse {
+  animation: nfcPulse 2.4s cubic-bezier(0, 0.2, 0.8, 1) infinite;
+}
+
+/* Shimmer badge */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.15) 50%, rgba(255,255,255,0) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 3s infinite;
+}
