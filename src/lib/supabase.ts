@@ -497,7 +497,14 @@ export async function updateSettingsInSupabase(settings: Partial<SiteSettings>):
     mercado_pago_public_key: settings.mercadoPagoPublicKey
   };
   const payload = Object.fromEntries(Object.entries(row).filter(([,value]) => value !== undefined));
-  return (await adminApi('/api/admin/settings', 'PATCH', payload)).ok;
+  if (Object.keys(payload).length === 0) return true;
+  const result = await adminApi('/api/admin/settings', 'PATCH', payload);
+  if (!result.ok || !result.data) return false;
+  // Require every submitted, supported CMS field to match the persisted row.
+  // A generic HTTP 200 does not by itself prove the requested values were saved.
+  return Object.entries(payload).every(([key, value]) =>
+    JSON.stringify(result.data[key]) === JSON.stringify(value)
+  );
 }
 
 // -----------------------------------------------------------------------------
