@@ -10,6 +10,7 @@ currently hold table-wide read and write grants. It contains two products, six k
 zero orders, and one site_settings record. Do not expose order customer details.
 
 ## Implemented in this branch
+- Supabase Auth email/password sign-in wired in the existing admin modal; role is rechecked by `/api/admin/me` using a real bearer token before showing the admin UI. A stored localStorage admin role alone no longer restores admin on reload. Role switching from the browser was disabled.
 - `api/_lib/admin-auth.ts`: verify Supabase Auth bearer JWT via `auth.getUser`.
   Only `app_metadata.role=admin` (controlled by Supabase server admin), optionally
   restricted to `PULSAR_ADMIN_USER_ID`, receives admin access.
@@ -20,10 +21,7 @@ zero orders, and one site_settings record. Do not expose order customer details.
   Product cost is NOT public in the proposal.
 
 ## Required before deploying or applying SQL
-1. Change the admin sign-in UI to use Supabase Auth, obtain a real session
-   access_token, and pass `Authorization: Bearer <access_token>` to admin routes.
-   Remove any localStorage-based authorizations. Only a Supabase administrator
-   should assign `app_metadata.role=admin`, optionally pin user ID in Vercel.
+1. Configure a genuine Supabase Auth user with `app_metadata.role=admin` via trusted server/admin tooling, and set `PULSAR_ADMIN_USER_ID` in Vercel to pin that account. The sign-in UI is now wired, but session restoration and revalidation on navigation need further review. Validate that all admin mutations use the server-side API, not the old browser Supabase CRUD.
 2. Change product catalog fetching from `select('*')` to explicit public columns.
 3. Replace direct browser CRUD (products/kits/settings/orders) with authenticated
    backend calls. Implement an authenticated settings API and a public, sanitized
@@ -39,6 +37,12 @@ zero orders, and one site_settings record. Do not expose order customer details.
    denied anonymous writes, payment webhooks, and shipping quotes in staging.
 8. Back up Supabase before migration; audit any other app depending on its public
    tables. Apply migration only once all browser consumers have been adapted.
+
+## Known staging blockers
+- There is no reliable preview build result yet; no production deployment was requested.
+- The legacy AdminPanel actions still call browser Supabase helpers. Never apply the proposed RLS migration or deploy to production before replacing and verifying those writes.
+- Existing customer sign-in is a local UI flow, not verified identity. Never use it to authorize access to protected data.
+- The currently shared project's RLS remains open until a separately authorized migration; treat that as an urgent security risk.
 
 ## Vercel server-side variables
 `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, optionally
