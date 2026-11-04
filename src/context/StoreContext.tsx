@@ -151,14 +151,25 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // 5. Persistent Settings (ensuring clean headline)
   const [settings, setSettings] = useState<SiteSettings>(() => {
     const saved = localStorage.getItem('pulsar_settings');
+    // Legacy builds cached payment and shipping secrets in localStorage.
+    // Only allow cosmetic/public settings into application state.
+    const defaults = {
+      ...INITIAL_SETTINGS,
+      mercadoPagoAccessToken: '',
+      melhorEnvioToken: '',
+      melhorEnvioClientSecret: ''
+    };
     if (saved) {
-      const parsed = JSON.parse(saved);
-      return {
-        ...INITIAL_SETTINGS,
-        ...parsed
-      };
+      try {
+        const parsed = JSON.parse(saved);
+        const { mercadoPagoAccessToken: _mpSecret,
+          melhorEnvioToken: _meSecret,
+          melhorEnvioClientSecret: _meClientSecret,
+          ...publicSettings } = parsed;
+        return { ...defaults, ...publicSettings };
+      } catch { return defaults; }
     }
-    return INITIAL_SETTINGS;
+    return defaults;
   });
 
   // 6. User Auth State
@@ -279,7 +290,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('pulsar_settings', JSON.stringify(settings));
+    // Never cache payment/shipping access tokens on a customer device.
+    // Overwrites any legacy localStorage record that contained secrets.
+    const { mercadoPagoAccessToken: _mpSecret,
+      melhorEnvioToken: _meSecret,
+      melhorEnvioClientSecret: _meClientSecret,
+      ...safeSettings } = settings;
+    localStorage.setItem('pulsar_settings', JSON.stringify(safeSettings));
   }, [settings]);
 
   useEffect(() => {
@@ -563,7 +580,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Settings
   const updateSettings = (newSettings: Partial<SiteSettings>) => {
     const previous = settings;
-    const merged = { ...previous, ...newSettings };
+    // Secret tokens must only come from server environment variables,
+    // never from untrusted or persisted browser settings.
+    const { mercadoPagoAccessToken: _mpSecret,
+      melhorEnvioToken: _meSecret,
+      melhorEnvioClientSecret: _meClientSecret,
+      ...safeChanges } = newSettings;
+    const merged = { ...previous, ...safeChanges };
     setSettings(merged);
     if (!isSupabaseConfigured()) {
       setSettings(previous);
