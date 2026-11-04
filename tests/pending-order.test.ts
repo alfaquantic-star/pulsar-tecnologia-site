@@ -40,6 +40,20 @@ test('retry uses stable order number for the same idempotency key', () => {
   assert.notEqual(one.id, two.id); // Database unique key handles collisions atomically.
 });
 
+test('idempotency fingerprint changes when the verified purchase changes', () => {
+  const key = randomUUID();
+  const first = buildPendingOrderDraft(verified(), key);
+  const repeated = buildPendingOrderDraft(verified(), key);
+  const changed = buildPendingOrderDraft({
+    ...verified(),
+    shipping: { ...verified().shipping, priceCents: 1099 }
+  }, key);
+  assert.equal(first.checkout_payload_hash, repeated.checkout_payload_hash);
+  assert.equal(first.order_number, changed.order_number);
+  assert.notEqual(first.checkout_payload_hash, changed.checkout_payload_hash);
+  assert.match(first.checkout_payload_hash, /^[0-9a-f]{64}$/);
+});
+
 test('cannot build an order from an absent cart or invalid key', () => {
   assert.throws(() => buildPendingOrderDraft({ ...verified(), lines: [] }, randomUUID()));
   assert.throws(() => buildPendingOrderDraft(verified(), 'customer-controlled'));
