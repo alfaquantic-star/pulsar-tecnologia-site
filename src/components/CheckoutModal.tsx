@@ -60,10 +60,6 @@ export const CheckoutModal: React.FC = () => {
     shipping?: { id: string; carrier: string; service: string; price: number; estimatedDays: number } | null;
     lines?: Array<{ id: string; name: string; quantity: number; unitPrice: number; total: number }>;
   } | null>(null);
-  useEffect(() => {
-    // Prevent showing a server quote for a different cart/CEP/shipping option.
-    setServerCartResult(null);
-  }, [cart, zipCode, selectedShipping?.id, appliedCoupon]);
 
 
 
@@ -86,6 +82,11 @@ export const CheckoutModal: React.FC = () => {
   const [validatedCep, setValidatedCep] = useState('');
   const [isLookingUpCep, setIsLookingUpCep] = useState(false);
   const [cepLookupError, setCepLookupError] = useState('');
+  useEffect(() => {
+    // Prevent showing a server quote for a different cart/CEP/shipping option.
+    setServerCartResult(null);
+  }, [cart, zipCode, selectedShipping?.id, appliedCoupon]);
+
 
   // Credit Card Form
   const [cardNumber, setCardNumber] = useState('4532 •••• •••• 8892');
