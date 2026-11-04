@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { requireAdmin } from '../_lib/admin-auth';
+import { requireAdmin } from '../_lib/admin-auth.js';
 
 const fields = new Set([
   'logo_url', 'hero_title', 'hero_title_highlight', 'hero_subtitle',
