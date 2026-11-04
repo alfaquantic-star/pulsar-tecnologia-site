@@ -6,6 +6,7 @@ import {
   testSupabaseConnection,
   fetchProductsFromSupabase,
   upsertProductInSupabase,
+  patchProductInSupabase,
   deleteProductInSupabase,
   fetchKitsFromSupabase,
   upsertKitInSupabase,
@@ -472,7 +473,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       showToast('Supabase indisponível. Alteração apenas local; não foi salva.', 'error');
       return;
     }
-    void upsertProductInSupabase(updatedProd).then((saved) => {
+    const changed = Object.fromEntries(
+      (Object.keys(updatedProd) as Array<keyof Product>)
+        .filter((key) => JSON.stringify(previous[key]) !== JSON.stringify(updatedProd[key]))
+        .map((key) => [key, updatedProd[key]])
+    ) as Partial<Product>;
+    void patchProductInSupabase(id, changed).then((saved) => {
       if (saved) {
         showToast('Produto atualizado e confirmado no Supabase.', 'success');
       } else {
