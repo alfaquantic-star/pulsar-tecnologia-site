@@ -16,6 +16,9 @@ const PULSAR_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_cFGIrygvfoAZHLckdq8iLA_r
 const STORAGE_URL_KEY = 'pulsar_supabase_url';
 const STORAGE_KEY_KEY = 'pulsar_supabase_anon_key';
 
+let adminApiLastError = '';
+export function getAdminApiLastError(): string { return adminApiLastError; }
+
 /** Protected administrative requests; no direct browser write to public tables. */
 async function adminApi(path: string, method: 'GET'|'POST'|'PATCH'|'DELETE', body?: unknown): Promise<{ ok: boolean; status: number; data?: any }> {
   const client = getSupabaseClient();
@@ -33,6 +36,10 @@ async function adminApi(path: string, method: 'GET'|'POST'|'PATCH'|'DELETE', bod
       cache: 'no-store'
     });
     const json = await res.json().catch(() => ({}));
+    adminApiLastError = res.ok ? '' : ('HTTP ' + res.status + ' · ' +
+      (typeof json.code === 'string' ? json.code : 'unknown_error') +
+      (typeof json.dbCode === 'string' ? ' (' + json.dbCode + ')' : ''));
+    if (!res.ok) console.warn('Pulsar admin API:', adminApiLastError);
     return { ok: res.ok, status: res.status, data: json.data };
   } catch {
     return { ok: false, status: 503 };
