@@ -443,6 +443,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Melhor Envio Real API Simulator with Brazilian Logistics
   const calculateShipping = async (rawCep: string): Promise<ShippingOption[]> => {
+    // A previous quote belongs to the previous cart, not the next checkout.
+    setShippingOptions([]);
+    setSelectedShipping(null);
     const cleanCep = rawCep.replace(/\D/g, '');
     if (cleanCep.length !== 8) {
       showToast('Por favor digite um CEP válido com 8 dígitos.', 'error');
@@ -455,7 +458,13 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     try {
       const response = await fetch('/api/shipping/quote', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cep: cleanCep, quantity: cart.reduce((sum, item) => sum + item.quantity, 0) })
+        body: JSON.stringify({
+          cep: cleanCep,
+          items: cart.map(item => ({
+            ...(item.isKit ? { kitId: item.kitId } : { productId: item.productId }),
+            quantity: item.quantity
+          }))
+        })
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || 'Não foi possível cotar o frete');
@@ -472,6 +481,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setIsCalculatingShipping(false);
     }
   };
+
+  // A shipping quote is valid only for the exact cart used to request it.
+  useEffect(() => {
+    setShippingOptions([]);
+    setSelectedShipping(null);
+  }, [cart]);
 
   // Product CRUD
   const addProduct = (prodData: Omit<Product, 'id'>) => {
