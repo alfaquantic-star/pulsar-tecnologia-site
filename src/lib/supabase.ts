@@ -39,11 +39,20 @@ async function adminApi(path: string, method: 'GET'|'POST'|'PATCH'|'DELETE', bod
   }
 }
 async function saveAdminCatalog(table: 'products'|'kits', id: string, row: Record<string, unknown>) {
+  // Timestamps are owned by the database/server. Never send updated_at from
+  // the browser: the protected endpoint rejects fields outside its allowlist.
+  const { updated_at: _ignoredTimestamp, ...safeRow } = row;
   const endpoint = '/api/admin/catalog?table=' + table + '&id=' + encodeURIComponent(id);
-  const update = await adminApi(endpoint, 'PATCH', Object.fromEntries(Object.entries(row).filter(([key]) => key !== 'id')));
+  const update = await adminApi(endpoint, 'PATCH',
+    Object.fromEntries(Object.entries(safeRow).filter(([key]) => key !== 'id')));
   if (update.ok) return true;
-  if (update.status !== 404) return false;
-  return (await adminApi('/api/admin/catalog?table=' + table, 'POST', row)).ok;
+  if (update.status !== 404) {
+    console.warn('Falha ao atualizar ' + table + ' via API (HTTP ' + update.status + ')');
+    return false;
+  }
+  const create = await adminApi('/api/admin/catalog?table=' + table, 'POST', safeRow);
+  if (!create.ok) console.warn('Falha ao cadastrar ' + table + ' via API (HTTP ' + create.status + ')');
+  return create.ok;
 }
 
 /**
