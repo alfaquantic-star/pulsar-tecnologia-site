@@ -279,7 +279,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [settings]);
 
   useEffect(() => {
-    if (currentUser) {
+    // Supabase Auth owns the admin session. Never persist an admin role in
+    // app-controlled storage; it can be edited by any browser user.
+    if (currentUser && currentUser.role !== 'admin') {
       localStorage.setItem('pulsar_user', JSON.stringify(currentUser));
     } else {
       localStorage.removeItem('pulsar_user');
@@ -704,6 +706,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       void getSupabaseClient()?.auth.signOut();
     }
     setCurrentUser(null);
+    setOrders([]);
     if (currentView === 'admin') {
       setCurrentView('home');
     }
