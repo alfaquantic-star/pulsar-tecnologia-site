@@ -1,0 +1,23 @@
+name: Pending Order Safety Tests
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [security/server-api-phase1]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pending-order:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Unit tests (no secrets or external services)
+        run: node --experimental-strip-types --test tests/pending-order.test.ts
