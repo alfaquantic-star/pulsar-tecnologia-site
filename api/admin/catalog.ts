@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { adminDatabase, requireAdmin } from '../_lib/admin-auth';
+import { adminDatabase, requireAdmin } from '../_lib/admin-auth.js';
 
 const allowedTables = new Set(['products', 'kits']);
 const allowedFields: Record<string, Set<string>> = {
