@@ -90,11 +90,24 @@ export function buildPendingOrderDraft(verified: VerifiedCheckout, idempotencyKe
   if (!Number.isSafeInteger(finalCents) || finalCents <= 0) fail('Invalid final total');
 
   // Stable reference for repeated submissions using this key.
+  // The same idempotency key must NEVER be allowed to refer to a
+  // different verified cart, shipping choice, discount or customer.
+  // A future atomic DB insert/retry must compare this fingerprint.
+  const checkoutPayloadHash = createHash('sha256').update(JSON.stringify({
+    items, customer: { name: customer.fullName.trim(), email: customer.email.trim().toLowerCase(),
+      phone: customer.phone.trim(), cpf: customer.cpf.trim() },
+    address: { ...address, zipCode: address.zipCode.replace(/\D/g,'') },
+    shipping: verified.shipping,
+    discountCents: verified.discountCents,
+    subtotalCents,
+    finalCents
+  })).digest('hex');
   const hash = createHash('sha256').update(idempotencyKey).digest('hex').slice(0, 24);
   return {
     id: 'ord-' + randomUUID(),
     order_number: 'PLS-' + hash.toUpperCase(),
     checkout_idempotency_key: idempotencyKey,
+    checkout_payload_hash: checkoutPayloadHash,
     customer_name: customer.fullName.trim(),
     customer_email: customer.email.trim().toLowerCase(),
     customer_phone: customer.phone.trim(),
