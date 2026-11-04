@@ -97,12 +97,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // No client-supplied shipping price, insurance value or dimensions are trusted.
     let shipping: { id:string; carrier:string; service:string; price:number; estimatedDays:number } | null = null;
     if (body.cep !== undefined || body.shippingId !== undefined) {
-      const destination = typeof body.cep === 'string' ? body.cep.replace(/\\D/g,'') : '';
+      const destination = typeof body.cep === 'string' ? body.cep.replace(/\D/g,'') : '';
       if (destination.length !== 8 || typeof body.shippingId !== 'string' ||
           body.shippingId.length > 80 || !body.shippingId.length) {
         return res.status(400).json({ error:'Informe CEP e modalidade de frete válidos para calcular o total.' });
       }
-      const origin = (process.env.SHIPPING_ORIGIN_CEP || '').replace(/\\D/g,'');
+      const origin = (process.env.SHIPPING_ORIGIN_CEP || '').replace(/\D/g,'');
       const token = process.env.MELHOR_ENVIO_TOKEN;
       if (origin.length !== 8 || !token) {
         return res.status(503).json({ error:'Melhor Envio ainda não configurado no servidor.' });
