@@ -215,10 +215,12 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         fetchSettingsFromSupabase(),
       ]);
 
-      if (remoteProds && remoteProds.length > 0) {
+      // A successful empty result is authoritative: never keep stale,
+      // locally cached inactive products/kits visible to visitors.
+      if (remoteProds !== null) {
         setProducts(remoteProds);
       }
-      if (remoteKits && remoteKits.length > 0) {
+      if (remoteKits !== null) {
         setKits(remoteKits);
       }
       if (remoteOrders !== null) {
@@ -227,8 +229,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (remoteSettings) {
         setSettings((prev) => ({ ...prev, ...remoteSettings }));
       }
-      setIsSupabaseConnected(true);
-      showToast('Dados sincronizados com o Supabase com sucesso!', 'success');
+      const catalogLoaded = remoteProds !== null && remoteKits !== null;
+      setIsSupabaseConnected(catalogLoaded);
+      if (catalogLoaded) showToast('Catálogo sincronizado com o Supabase.', 'success');
+      else showToast('Falha ao carregar parte do catálogo. Atualize a página antes de comprar.', 'error');
     } catch (err) {
       console.warn('Erro ao sincronizar com Supabase:', err);
     } finally {
