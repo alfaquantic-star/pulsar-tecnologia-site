@@ -155,11 +155,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const saved = localStorage.getItem('pulsar_settings');
     if (saved) {
       const parsed = JSON.parse(saved);
-      return { 
-        ...INITIAL_SETTINGS, 
-        ...parsed, 
-        heroTitle: 'Multiplique suas Avaliações no Google',
-        heroTitleHighlight: 'em até 300% com 1 Toque'
+      return {
+        ...INITIAL_SETTINGS,
+        ...parsed
       };
     }
     return INITIAL_SETTINGS;
