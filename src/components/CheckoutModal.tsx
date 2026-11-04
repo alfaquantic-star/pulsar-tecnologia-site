@@ -34,6 +34,7 @@ export const CheckoutModal: React.FC = () => {
     setSelectedShipping,
     calculateShipping,
     isCalculatingShipping,
+    destinationCep,
     currentUser,
     createOrder,
     simulateWebhookPaymentApproval,
