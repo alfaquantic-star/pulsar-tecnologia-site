@@ -1,11 +1,9 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { validateMercadoPagoSignature } from '../_lib/mp-webhook-signature.js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-/**
- * Read-only Mercado Pago webhook validation.
- * NO order can be approved or modified here until order association,
- * amount/currency/owner validation, idempotent transitions and a durable
- * queue have all been implemented and reviewed.
+/** Signed Mercado Pago notification verification. Order updates are restricted
+ * to explicitly configured PREVIEW test sellers. Production stays read-only.
+ * Durable notification processing and production reconciliation are pending.
  */
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Cache-Control', 'no-store');
@@ -16,33 +14,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const secret = process.env.MP_WEBHOOK_SECRET?.trim();
   if (!secret) return res.status(503).json({ error: 'Webhook not configured' });
 
-  const signature = req.headers['x-signature'];
-  const requestId = req.headers['x-request-id'];
   const rawId = req.query['data.id'] ?? req.query['data_id'];
   const dataId = typeof rawId === 'string' ? rawId.trim().toLowerCase() : '';
-  if (typeof signature !== 'string' || typeof requestId !== 'string' ||
-      !requestId || requestId.length > 200 ||
-      !/^[a-z0-9_-]{1,128}$/.test(dataId)) {
-    return res.status(401).json({ error: 'Invalid signature inputs' });
+  if (!validateMercadoPagoSignature({
+    signature: req.headers['x-signature'],
+    requestId: req.headers['x-request-id'],
+    dataId
+  }, secret)) {
+    return res.status(401).json({ error: 'Invalid webhook signature' });
   }
-  const parts = Object.fromEntries(signature.split(',').map(x => {
-    const [key, ...value] = x.split('=');
-    return [key?.trim() || '', value.join('=').trim()];
-  }));
-  const timestamp = parts.ts, receivedHash = parts.v1;
-  if (!timestamp || !/^\d{10,13}$/.test(timestamp) ||
-      !receivedHash || !/^[0-9a-fA-F]{64}$/.test(receivedHash)) {
-    return res.status(401).json({ error: 'Malformed signature' });
+  // Reject mismatched resource identifiers, but do not trust the body alone.
+  const bodyId = req.body?.data?.id;
+  if (bodyId != null && String(bodyId).trim().toLowerCase() !== dataId) {
+    return res.status(400).json({ error: 'Webhook resource ID mismatch' });
   }
-  const time = Number(timestamp) * (timestamp.length === 10 ? 1000 : 1);
-  if (Math.abs(Date.now() - time) > 5 * 60 * 1000) {
-    return res.status(401).json({ error: 'Expired signature' });
-  }
-  const manifest = `id:${dataId};request-id:${requestId};ts:${timestamp};`;
-  const expected = createHmac('sha256', secret).update(manifest).digest();
-  const received = Buffer.from(receivedHash, 'hex');
-  if (expected.length !== received.length || !timingSafeEqual(expected, received)) {
-    return res.status(401).json({ error: 'Signature mismatch' });
+  if (typeof req.body?.type === 'string' &&
+      typeof req.query.type === 'string' && req.body.type !== req.query.type) {
+    return res.status(400).json({ error: 'Webhook event type mismatch' });
   }
 
   // A signed webhook is merely a signal, never proof that an order is paid.
