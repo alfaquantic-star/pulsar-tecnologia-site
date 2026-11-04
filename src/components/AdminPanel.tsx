@@ -531,7 +531,7 @@ export const AdminPanel: React.FC = () => {
         showToast('Entre novamente como administrador.', 'error');
         return;
       }
-      const response = await fetch('/api/admin/checkout-readiness', {
+      const response = await fetch('/api/admin/me?check=checkout', {
         headers: { Authorization: 'Bearer ' + session.access_token },
         cache: 'no-store'
       });
