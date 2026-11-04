@@ -186,6 +186,8 @@ export const AdminPanel: React.FC = () => {
   const [apiTestSuccess, setApiTestSuccess] = useState<{ mp?: boolean; me?: boolean }>({});
   const [isTestingMp, setIsTestingMp] = useState(false);
   const [mpTestResult, setMpTestResult] = useState<{ success: boolean; message: string; user?: any } | null>(null);
+  const [isTestingMelhorEnvio, setIsTestingMelhorEnvio] = useState(false);
+  const [melhorEnvioTestResult, setMelhorEnvioTestResult] = useState<{ success: boolean; message: string; environment?: string; availableOptions?: number } | null>(null);
 
   // Metrics
   const totalRevenue = orders
@@ -507,6 +509,39 @@ export const AdminPanel: React.FC = () => {
       showToast('Falha no teste do Mercado Pago', 'error');
     } finally {
       setIsTestingMp(false);
+    }
+  };
+
+  const handleTestMelhorEnvio = async () => {
+    setIsTestingMelhorEnvio(true);
+    setMelhorEnvioTestResult(null);
+    try {
+      const { getSupabaseClient } = await import('../lib/supabase');
+      const client = getSupabaseClient();
+      const { data: { session } } = client
+        ? await client.auth.getSession()
+        : { data: { session: null } };
+      if (!session?.access_token) {
+        setMelhorEnvioTestResult({ success: false, message: 'Entre novamente como administrador.' });
+        return;
+      }
+      const response = await fetch('/api/shipping/test-connection', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + session.access_token, 'Content-Type': 'application/json' },
+        body: '{}',
+        cache: 'no-store'
+      });
+      const result = await response.json().catch(() => ({}));
+      setMelhorEnvioTestResult({
+        success: response.ok && result.success === true,
+        message: typeof result.message === 'string' ? result.message : 'Falha no teste do Melhor Envio.',
+        environment: result.environment,
+        availableOptions: result.availableOptions
+      });
+    } catch {
+      setMelhorEnvioTestResult({ success: false, message: 'Falha na conexão com a API da Vercel.' });
+    } finally {
+      setIsTestingMelhorEnvio(false);
     }
   };
 
@@ -1927,6 +1962,27 @@ export const AdminPanel: React.FC = () => {
                   </label>
                 </div>
 
+                <div className="flex flex-col items-start gap-3">
+                  <button type="button" disabled={isTestingMelhorEnvio} onClick={handleTestMelhorEnvio}
+                    className="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs">
+                    {isTestingMelhorEnvio ? 'Verificando...' : 'Testar Conexão Melhor Envio'}
+                  </button>
+                  <p className="text-[11px] text-slate-400">
+                    Testa uma cotação sem comprar etiqueta. O token e o ambiente são definidos pelas variáveis da Vercel;
+                    o checkbox visual de Sandbox não altera o servidor.
+                  </p>
+                  {melhorEnvioTestResult && (
+                    <div className={`w-full rounded-xl border p-3 text-xs ${melhorEnvioTestResult.success
+                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                      : 'border-red-500/40 bg-red-500/10 text-red-300'}`}>
+                      {melhorEnvioTestResult.message}
+                      {melhorEnvioTestResult.environment && ` Ambiente: ${melhorEnvioTestResult.environment}.`}
+                      {melhorEnvioTestResult.availableOptions !== undefined &&
+                        ` Opções retornadas: ${melhorEnvioTestResult.availableOptions}.`}
+                    </div>
+                  )}
+                </div>
+
                 {/* Melhor Envio Instructions Accordion */}
                 <div className="p-4 rounded-2xl bg-black/40 border border-white/5 space-y-2 text-[11px] text-slate-400">
                   <p className="font-bold text-white flex items-center gap-1.5">
@@ -1955,8 +2011,8 @@ export const AdminPanel: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => {
-                    handleSaveApiSettings();
-                    showToast('Credenciais validadas com sucesso!', 'success');
+                    void handleTestMercadoPago();
+                    void handleTestMelhorEnvio();
                   }}
                   className="px-5 py-3.5 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition flex items-center gap-2"
                 >
