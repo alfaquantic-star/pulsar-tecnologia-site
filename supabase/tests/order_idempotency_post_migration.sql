@@ -8,7 +8,7 @@ DECLARE
   idx text;
 BEGIN
   FOREACH col IN ARRAY ARRAY[
-    'order_number','checkout_idempotency_key','mercado_pago_preference_id',
+    'order_number','checkout_idempotency_key','checkout_payload_hash','mercado_pago_preference_id',
     'shipping_service_id','payment_verified_at'
   ] LOOP
     IF NOT EXISTS (
