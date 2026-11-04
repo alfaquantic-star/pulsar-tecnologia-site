@@ -53,6 +53,12 @@ export const CheckoutModal: React.FC = () => {
   const [redirectUrl, setRedirectUrl] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [countdown, setCountdown] = useState<number>(3);
+  const [isCheckingCart, setIsCheckingCart] = useState(false);
+  const [serverCartResult, setServerCartResult] = useState<{
+    validated: boolean; subtotal?: number; message: string;
+    lines?: Array<{ id: string; name: string; quantity: number; unitPrice: number; total: number }>;
+  } | null>(null);
+
 
   // Customer Form
   const [fullName, setFullName] = useState(currentUser?.fullName || '');
@@ -140,6 +146,42 @@ export const CheckoutModal: React.FC = () => {
       showToast(msg, 'error');
     } finally {
       setIsLookingUpCep(false);
+    }
+  };
+
+  const handleValidateCart = async () => {
+    setIsCheckingCart(true);
+    setServerCartResult(null);
+    try {
+      const response = await fetch('/api/checkout/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: cart.map(item => ({
+            ...(item.isKit ? { kitId: item.kitId } : { productId: item.productId }),
+            quantity: item.quantity
+          }))
+        }),
+        cache: 'no-store'
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || result.validated !== true) {
+        setServerCartResult({
+          validated: false,
+          message: typeof result.error === 'string' ? result.error : 'Não foi possível validar este carrinho.'
+        });
+        return;
+      }
+      setServerCartResult({
+        validated: true,
+        subtotal: result.subtotal,
+        lines: result.lines,
+        message: typeof result.message === 'string' ? result.message : 'Catálogo validado pelo servidor.'
+      });
+    } catch {
+      setServerCartResult({ validated: false, message: 'Falha de conexão durante a validação.' });
+    } finally {
+      setIsCheckingCart(false);
     }
   };
 
@@ -745,6 +787,31 @@ export const CheckoutModal: React.FC = () => {
                         Não informe dados do cartão nesta página.
                       </div>
                     )}
+
+                    {/* Read-only server validation: no customer data or payment action. */}
+                    <div className="rounded-xl border border-white/10 bg-black/25 p-3 space-y-3">
+                      <button type="button" onClick={handleValidateCart} disabled={isCheckingCart || !cart.length}
+                        className="w-full rounded-xl border border-blue-400/40 bg-blue-500/15 text-blue-200 p-3 text-xs font-bold disabled:opacity-50">
+                        {isCheckingCart ? 'Validando catálogo...' : 'Verificar preços e estoque no servidor (sem pagamento)'}
+                      </button>
+                      {serverCartResult && (
+                        <div className={`rounded-lg border p-3 text-xs ${serverCartResult.validated
+                          ? 'border-emerald-500/30 text-emerald-300 bg-emerald-950/20'
+                          : 'border-red-500/30 text-red-300 bg-red-950/20'}`}>
+                          <p>{serverCartResult.message}</p>
+                          {serverCartResult.validated && typeof serverCartResult.subtotal === 'number' && (
+                            <p className="font-bold mt-2">
+                              Subtotal confirmado pelo Supabase: R$ {serverCartResult.subtotal.toFixed(2)}
+                            </p>
+                          )}
+                          {serverCartResult.validated && (
+                            <p className="mt-1 text-slate-400">
+                              Este valor não inclui frete nem descontos. Nenhum pedido foi criado.
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </div>
 
                     {/* Submit Button */}
                     <button
