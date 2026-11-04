@@ -469,7 +469,9 @@ export const AdminPanel: React.FC = () => {
       logoUrl: cmsLogoUrl,
       heroImageUrl: cmsHeroImageUrl
     });
-    showToast('Alterações visuais e textos publicados no site oficial!', 'success');
+    // The StoreContext emits success only after the protected Supabase API
+    // has confirmed persistence. The button itself must not claim success.
+    // Fields not stored in site_settings still require a separate migration.
   };
 
   const handleSaveApiSettings = () => {
