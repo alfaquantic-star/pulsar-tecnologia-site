@@ -23,10 +23,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Fail closed when server credentials are not provisioned.
   try {
     const auth = await requireAdmin(req);
-    if (!auth) return res.status(403).json({ error: 'Administrator authentication required' });
+    if (!auth) return res.status(403).json({ code: 'admin_not_authorized', error: 'Administrator authentication required' });
 
     const table = String(req.query.table || '');
-    if (!allowedTables.has(table)) return res.status(400).json({ error: 'Invalid resource' });
+    if (!allowedTables.has(table)) return res.status(400).json({ code: 'invalid_table', error: 'Invalid resource' });
     const db = adminDatabase();
     const id = String(req.query.id || '');
     if (id.length > 128) return res.status(400).json({ error: 'Invalid ID' });
@@ -43,16 +43,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (error) return res.status(500).json({ error: 'Database operation failed' });
       return res.status(200).json({ ok: true });
     }
-    if (!isObject(req.body)) return res.status(400).json({ error: 'Invalid JSON body' });
+    if (!isObject(req.body)) return res.status(400).json({ code: 'invalid_json', error: 'Invalid JSON body' });
     const keys = Object.keys(req.body);
     if (!keys.length || keys.length > 40 || keys.some((k) => !allowedFields[table].has(k))) {
-      return res.status(400).json({ error: 'Invalid fields' });
+      return res.status(400).json({ code: 'invalid_fields', error: 'Invalid fields' });
     }
     if (req.method === 'PATCH') {
-      if (!id || 'id' in req.body) return res.status(400).json({ error: 'ID required; ID is immutable' });
+      if (!id || 'id' in req.body) return res.status(400).json({ code: 'invalid_id', error: 'ID required; ID is immutable' });
       const { data, error } = await db.from(table).update(req.body).eq('id', id).select('*').maybeSingle();
-      if (error) return res.status(400).json({ error: 'Update rejected' });
-      if (!data) return res.status(404).json({ error: 'Not found' });
+      if (error) { console.error('Catalog PATCH rejected', { code: error.code, status: error.details ? 'has_details' : 'no_details' }); return res.status(400).json({ code: 'database_update_rejected', dbCode: error.code || 'unknown', error: 'Update rejected' }); }
+      if (!data) return res.status(404).json({ code: 'row_not_found', error: 'Not found' });
       return res.status(200).json({ data });
     }
     if (!req.body.id || typeof req.body.id !== 'string' || req.body.id.length > 128) {
@@ -63,6 +63,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(201).json({ data });
   } catch (error) {
     console.error('Admin API configuration or runtime failure', error instanceof Error ? error.message : 'unknown');
-    return res.status(503).json({ error: 'Administration temporarily unavailable' });
+    return res.status(503).json({ code: 'server_admin_unavailable', error: 'Administration temporarily unavailable' });
   }
 }
