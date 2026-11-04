@@ -6,10 +6,15 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { Product, Kit, Order, SiteSettings, CustomerProfile, OrderPaymentStatus, OrderShippingStatus } from '../types';
 
-// Storage keys for custom Supabase credentials configured via the Admin UI
+// These are PUBLIC project identifiers, not server credentials.
+// Use the canonical project for this store to avoid stale browser overrides.
+const PULSAR_SUPABASE_URL = 'https://srvctqtmlbkmgiazgsrj.supabase.co';
+const PULSAR_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_cFGIrygvfoAZHLckdq8iLA_rZZApxFz';
+
+// Legacy browser settings may contain obsolete Supabase credentials.
+// Never trust them to override the store's known Supabase project.
 const STORAGE_URL_KEY = 'pulsar_supabase_url';
 const STORAGE_KEY_KEY = 'pulsar_supabase_anon_key';
-
 
 /** Protected administrative requests; no direct browser write to public tables. */
 async function adminApi(path: string, method: 'GET'|'POST'|'PATCH'|'DELETE', body?: unknown): Promise<{ ok: boolean; status: number; data?: any }> {
@@ -47,27 +52,17 @@ async function saveAdminCatalog(table: 'products'|'kits', id: string, row: Recor
  * then falls back to environment variables.
  */
 export function getSupabaseCredentials(): { url: string; key: string } {
-  const localUrl = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_URL_KEY) : null;
-  const localKey = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY_KEY) : null;
-
-  const url = (localUrl || import.meta.env.VITE_SUPABASE_URL || '').trim();
-  const key = (localKey || import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
-
-  return { url, key };
+  // This site is bound to the existing Pulsar project. A publishable key
+  // is designed for browser use; private service-role keys remain on Vercel.
+  // In preview, a missing VITE_ variable must not break authentication.
+  return { url: PULSAR_SUPABASE_URL, key: PULSAR_SUPABASE_PUBLISHABLE_KEY };
 }
 
-/**
- * Saves custom Supabase credentials from the Admin Panel.
- */
-export function saveSupabaseCredentials(url: string, key: string) {
+/** Clear any old per-browser overrides that point to the wrong project. */
+export function saveSupabaseCredentials(_url: string, _key: string) {
   if (typeof window !== 'undefined') {
-    if (url) localStorage.setItem(STORAGE_URL_KEY, url.trim());
-    else localStorage.removeItem(STORAGE_URL_KEY);
-
-    if (key) localStorage.setItem(STORAGE_KEY_KEY, key.trim());
-    else localStorage.removeItem(STORAGE_KEY_KEY);
-
-    // Reset client instance
+    localStorage.removeItem(STORAGE_URL_KEY);
+    localStorage.removeItem(STORAGE_KEY_KEY);
     cachedClient = null;
   }
 }
