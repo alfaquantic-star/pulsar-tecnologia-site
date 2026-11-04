@@ -526,7 +526,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       if (saved) showToast('Kit atualizado e confirmado no Supabase.', 'success');
       else {
         setKits((prev) => prev.map((k) => k.id === id ? previous : k));
-        showToast('Falha ao salvar kit no Supabase. Alteração revertida.', 'error');
+        showToast('Falha ao salvar kit no Supabase: ' + (getAdminApiLastError() || 'sem resposta do servidor') + '. Alteração revertida.', 'error');
       }
     }).catch(() => {
       setKits((prev) => prev.map((k) => k.id === id ? previous : k));
@@ -544,14 +544,24 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // Settings
   const updateSettings = (newSettings: Partial<SiteSettings>) => {
-    setSettings((prev) => {
-      const merged = { ...prev, ...newSettings };
-      if (isSupabaseConfigured()) {
-        updateSettingsInSupabase(merged).catch((err) => console.warn('Supabase settings sync error:', err));
+    const previous = settings;
+    const merged = { ...previous, ...newSettings };
+    setSettings(merged);
+    if (!isSupabaseConfigured()) {
+      setSettings(previous);
+      showToast('Não foi possível salvar as configurações: Supabase indisponível.', 'error');
+      return;
+    }
+    void updateSettingsInSupabase(merged).then((saved) => {
+      if (saved) showToast('Configurações confirmadas no Supabase.', 'success');
+      else {
+        setSettings(previous);
+        showToast('Falha ao gravar configurações. Alteração revertida.', 'error');
       }
-      return merged;
+    }).catch(() => {
+      setSettings(previous);
+      showToast('Falha de conexão ao gravar configurações. Alteração revertida.', 'error');
     });
-    showToast('Configurações da loja salvas com sucesso!', 'success');
   };
 
   // Auth Operations
