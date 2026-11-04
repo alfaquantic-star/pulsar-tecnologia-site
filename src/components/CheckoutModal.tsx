@@ -60,8 +60,12 @@ export const CheckoutModal: React.FC = () => {
     shipping?: { id: string; carrier: string; service: string; price: number; estimatedDays: number } | null;
     lines?: Array<{ id: string; name: string; quantity: number; unitPrice: number; total: number }>;
   } | null>(null);
-
-
+  const [testOrderKey, setTestOrderKey] = useState<string | null>(null);
+  const [isCreatingTestOrder, setIsCreatingTestOrder] = useState(false);
+  const [testOrderResult, setTestOrderResult] = useState<{
+    success: boolean; message: string; orderNumber?: string; reused?: boolean;
+    checkoutUrl?: string; paymentStatus?: string;
+  } | null>(null);
 
   // Customer Form
   const [fullName, setFullName] = useState(currentUser?.fullName || '');
@@ -198,6 +202,68 @@ export const CheckoutModal: React.FC = () => {
       setServerCartResult({ validated: false, message: 'Falha de conexão durante a validação.' });
     } finally {
       setIsCheckingCart(false);
+    }
+  };
+
+  const handleCreateTestOrder = async (action: 'stage_order' | 'create_test_preference') => {
+    setTestOrderResult(null);
+    if (currentUser?.role !== 'admin') return;
+    if (!selectedShipping || validatedCep !== zipCode.replace(/\D/g, '') ||
+        !fullName.trim() || !email.trim() || !cpf.trim() || !whatsapp.trim() ||
+        !street.trim() || !number.trim() || !neighborhood.trim() ||
+        !city.trim() || !state.trim()) {
+      setTestOrderResult({ success: false, message: 'Preencha e valide endereço, comprador e frete para o teste.' });
+      return;
+    }
+    if (appliedCoupon) {
+      setTestOrderResult({ success: false, message: 'Retire o cupom no carrinho: descontos ainda não estão autorizados no servidor.' });
+      return;
+    }
+    setIsCreatingTestOrder(true);
+    try {
+      const { getSupabaseClient } = await import('../lib/supabase');
+      const client = getSupabaseClient();
+      const { data: { session } } = client ? await client.auth.getSession() :
+        { data: { session: null } };
+      if (!session?.access_token) throw Error('Entre novamente como administrador.');
+      const idempotencyKey = testOrderKey || crypto.randomUUID();
+      if (!testOrderKey) setTestOrderKey(idempotencyKey);
+      const response = await fetch('/api/mercadopago/create-preference', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + session.access_token,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          action, idempotencyKey,
+          items: cart.map(item => ({
+            ...(item.isKit ? { kitId: item.kitId } : { productId: item.productId }),
+            quantity: item.quantity
+          })),
+          cep: validatedCep, shippingId: selectedShipping.id,
+          customer: { fullName, email, phone: whatsapp, cpf },
+          address: {
+            zipCode: validatedCep, street, number, complement,
+            neighborhood, city, state
+          }
+        }),
+        cache: 'no-store'
+      });
+      const result = await response.json().catch(() => ({}));
+      setTestOrderResult({
+        success: response.ok && result.success === true,
+        message: result.message || result.error || 'Servidor não retornou o resultado.',
+        orderNumber: result.orderNumber,
+        reused: result.reused,
+        checkoutUrl: result.checkoutUrl,
+        paymentStatus: result.paymentStatus
+      });
+    } catch (err) {
+      setTestOrderResult({
+        success: false, message: err instanceof Error ? err.message : 'Falha no teste do pedido.'
+      });
+    } finally {
+      setIsCreatingTestOrder(false);
     }
   };
 
@@ -845,6 +911,35 @@ export const CheckoutModal: React.FC = () => {
                         </div>
                       )}
                     </div>
+
+                    {currentUser?.role === 'admin' && (
+                      <div className="p-3 space-y-3 rounded-xl border border-purple-500/40 bg-purple-950/20 text-xs">
+                        <p className="font-bold text-purple-200">Ferramentas do administrador — somente Preview</p>
+                        <p className="text-slate-400">O primeiro botão registra um pedido pendente no Supabase, sem cobrança nem reserva de estoque. Use somente dados de teste.</p>
+                        <button type="button" disabled={isCreatingTestOrder}
+                          onClick={() => void handleCreateTestOrder('stage_order')}
+                          className="w-full bg-purple-600/30 border border-purple-400/50 text-purple-100 p-3 rounded-lg font-bold disabled:opacity-50">
+                          {isCreatingTestOrder ? 'Processando...' : 'Criar pedido pendente de TESTE (sem pagamento)'}
+                        </button>
+                        <button type="button" disabled={isCreatingTestOrder}
+                          onClick={() => void handleCreateTestOrder('create_test_preference')}
+                          className="w-full bg-blue-600/20 border border-blue-400/40 text-blue-100 p-3 rounded-lg font-bold disabled:opacity-50">
+                          Criar preferência com vendedor de TESTE (quando habilitado)
+                        </button>
+                        <button type="button" onClick={() => { setTestOrderKey(null); setTestOrderResult(null); }}
+                          className="text-slate-300 underline">Nova tentativa de teste</button>
+                        {testOrderResult && (
+                          <div className={testOrderResult.success ? 'text-emerald-300' : 'text-amber-300'}>
+                            <p>{testOrderResult.message}</p>
+                            {testOrderResult.orderNumber && <p>Pedido: {testOrderResult.orderNumber}</p>}
+                            {testOrderResult.checkoutUrl && (
+                              <a target="_blank" rel="noopener noreferrer" href={testOrderResult.checkoutUrl}
+                                className="underline block mt-2">Abrir Checkout Pro de TESTE</a>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
 
                     {/* Submit Button */}
                     <button
