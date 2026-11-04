@@ -475,17 +475,16 @@ export const AdminPanel: React.FC = () => {
   };
 
   const handleSaveApiSettings = () => {
+    // Public store configuration only. Private tokens are configured in
+    // Vercel server environment variables, never stored via CMS/browser.
     updateSettings({
       originCep: cmsOriginCep,
-      mercadoPagoPublicKey: cmsMercadoPagoKey,
-      mercadoPagoAccessToken: cmsMercadoPagoToken,
-      mercadoPagoSandbox: cmsMercadoPagoSandbox,
-      melhorEnvioToken: cmsMelhorEnvioToken,
-      melhorEnvioClientId: cmsMelhorEnvioClientId,
-      melhorEnvioClientSecret: cmsMelhorEnvioClientSecret,
-      melhorEnvioSandbox: cmsMelhorEnvioSandbox
+      mercadoPagoPublicKey: cmsMercadoPagoKey
     });
-    showToast('Credenciais de API Mercado Pago e Melhor Envio salvas com sucesso!', 'success');
+    setCmsMercadoPagoToken('');
+    setCmsMelhorEnvioToken('');
+    setCmsMelhorEnvioClientSecret('');
+    showToast('Somente CEP de origem e chave pública foram enviados. Tokens privados devem ser configurados na Vercel (Environment Variables).', 'info');
   };
 
   const handleTestMercadoPago = async () => {
