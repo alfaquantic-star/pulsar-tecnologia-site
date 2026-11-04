@@ -51,7 +51,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method === 'PATCH') {
       if (!id || 'id' in req.body) return res.status(400).json({ code: 'invalid_id', error: 'ID required; ID is immutable' });
       const { data, error } = await db.from(table).update(req.body).eq('id', id).select('*').maybeSingle();
-      if (error) { console.error('Catalog PATCH rejected', { code: error.code, status: error.details ? 'has_details' : 'no_details' }); return res.status(400).json({ code: 'database_update_rejected', dbCode: error.code || 'unknown', error: 'Update rejected' }); }
+      if (error) {
+        const dbCode = error.code || 'unknown';
+        const m = String(error.message || '').toLowerCase();
+        const reason = /invalid api key|invalid jwt|jwt expired|api key|apikey/.test(m)
+          ? 'invalid_backend_key'
+          : /permission denied|row-level security|forbidden|unauthorized/.test(m)
+          ? 'database_permission_denied'
+          : /fetch failed|network|timeout|failed to fetch/.test(m)
+          ? 'database_connection_failed'
+          : /column|schema cache|unknown field/.test(m)
+          ? 'invalid_database_column'
+          : 'database_rejected_update';
+        console.error('Catalog PATCH rejected', { dbCode, reason, detailsAvailable: !!error.details });
+        return res.status(400).json({ code: 'database_update_rejected', dbCode, reason, error: 'Update rejected' });
+      }
       if (!data) return res.status(404).json({ code: 'row_not_found', error: 'Not found' });
       return res.status(200).json({ data });
     }
