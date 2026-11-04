@@ -7,6 +7,7 @@ BEGIN;
 ALTER TABLE public.orders
   ADD COLUMN IF NOT EXISTS order_number text,
   ADD COLUMN IF NOT EXISTS checkout_idempotency_key text,
+  ADD COLUMN IF NOT EXISTS checkout_payload_hash text,
   ADD COLUMN IF NOT EXISTS mercado_pago_preference_id text,
   ADD COLUMN IF NOT EXISTS shipping_service_id text,
   ADD COLUMN IF NOT EXISTS payment_verified_at timestamptz;
