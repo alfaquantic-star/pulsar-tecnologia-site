@@ -12,6 +12,18 @@ function signed(id: string, requestId = 'request-test-123', ts = '1762100000') {
 test('accepts signed Mercado Pago payment notification', () => {
   assert.equal(validateMercadoPagoSignature(signed('123456789'), secret), true);
 });
+test('accepts signed notifications when optional data.id query is absent', () => {
+  const ts = '1762100000', requestId = 'request-without-query-data-id';
+  const signature = createHmac('sha256', secret)
+    .update(`request-id:${requestId};ts:${ts};`).digest('hex');
+  assert.equal(validateMercadoPagoSignature({
+    signature: `ts=${ts},v1=${signature}`, requestId, dataId: ''
+  }, secret), true);
+  assert.equal(validateMercadoPagoSignature({
+    signature: `ts=${ts},v1=${signature}`, requestId, dataId: '123'
+  }, secret), false);
+});
+
 test('accepts legitimate webhook retry with older timestamp', () => {
   assert.equal(validateMercadoPagoSignature(signed('123456789', 'old-request', '1750000000'), secret), true);
 });
