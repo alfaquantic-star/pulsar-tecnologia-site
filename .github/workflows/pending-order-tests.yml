@@ -38,3 +38,41 @@ jobs:
           bunx esbuild api/mercadopago/create-preference.ts --bundle --platform=node --format=esm --packages=external --outfile=/tmp/checkout.mjs
           bunx esbuild api/mercadopago/webhook.ts --bundle --platform=node --format=esm --packages=external --outfile=/tmp/webhook.mjs
           bunx esbuild api/admin/me.ts --bundle --platform=node --format=esm --packages=external --outfile=/tmp/admin-me.mjs
+
+  rls-cutover-sandbox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: pulsar_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: isolated-ci-test-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d pulsar_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 8
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: isolated-ci-test-password
+      PGDATABASE: pulsar_ci
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure PostgreSQL client
+        run: |
+          if ! command -v psql >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq postgresql-client
+          fi
+      - name: Seed isolated legacy tables and unsafe policies
+        run: psql --set ON_ERROR_STOP=1 --file supabase/tests/fixtures/rls_ci_schema.sql
+      - name: Apply candidate migration ONLY to throwaway PostgreSQL
+        run: psql --set ON_ERROR_STOP=1 --file supabase/migrations/20261103_prepare_pulsar_rls.sql
+      - name: Assert privileges and restrictive policies
+        run: psql --set ON_ERROR_STOP=1 --file supabase/tests/pulsar_rls_post_cutover.sql
+      - name: Test public catalog and private tables as browser roles
+        run: psql --set ON_ERROR_STOP=1 --file supabase/tests/rls_functional_smoke_ci.sql
