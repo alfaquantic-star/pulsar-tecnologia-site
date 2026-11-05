@@ -24,6 +24,18 @@ test('accepts signed notifications when optional data.id query is absent', () =>
   }, secret), false);
 });
 
+test('authenticates simulator callbacks with missing optional x-request-id', () => {
+  const ts = '1762100000', dataId = '186905016881';
+  const signature = createHmac('sha256', secret)
+    .update(`id:${dataId};ts:${ts};`).digest('hex');
+  assert.equal(validateMercadoPagoSignature({
+    signature: `ts=${ts},v1=${signature}`, requestId: undefined, dataId
+  }, secret), true);
+  assert.equal(validateMercadoPagoSignature({
+    signature: `ts=${ts},v1=${signature}`, requestId: 'added-id', dataId
+  }, secret), false);
+});
+
 test('accepts legitimate webhook retry with older timestamp', () => {
   assert.equal(validateMercadoPagoSignature(signed('123456789', 'old-request', '1750000000'), secret), true);
 });
