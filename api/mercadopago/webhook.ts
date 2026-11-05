@@ -16,18 +16,41 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!secret) return res.status(503).json({ error: 'Webhook not configured' });
 
   const rawId = req.query['data.id'] ?? req.query['data_id'];
-  const dataId = typeof rawId === 'string' ? rawId.trim().toLowerCase() : '';
+  const queryDataId = typeof rawId === 'string' ? rawId.trim().toLowerCase() : '';
+  const bodyId = req.body?.data?.id;
   if (!validateMercadoPagoSignature({
     signature: req.headers['x-signature'],
     requestId: req.headers['x-request-id'],
-    dataId
+    dataId: queryDataId
   }, secret)) {
-    return res.status(401).json({ error: 'Invalid webhook signature' });
+    // Only log presence booleans: never log HMAC, secret, headers or customer data.
+    console.warn('Mercado Pago webhook signature rejected', {
+      hasSignature: typeof req.headers['x-signature'] === 'string',
+      hasRequestId: typeof req.headers['x-request-id'] === 'string',
+      hasQueryDataId: Boolean(queryDataId),
+      hasBodyDataId: bodyId != null
+    });
+    return res.status(401).json({
+      error: 'Invalid webhook signature',
+      diagnostic: {
+        signatureHeaderPresent: typeof req.headers['x-signature'] === 'string',
+        requestIdHeaderPresent: typeof req.headers['x-request-id'] === 'string',
+        dataIdQueryPresent: Boolean(queryDataId)
+      }
+    });
   }
-  // Reject mismatched resource identifiers, but do not trust the body alone.
-  const bodyId = req.body?.data?.id;
-  if (bodyId != null && String(bodyId).trim().toLowerCase() !== dataId) {
+  // When Mercado Pago omits data.id in the URL, its official HMAC manifest
+  // omits the id pair. The body identifier is then only a lookup hint:
+  // we still fetch the payment from MP and validate seller, preference,
+  // currency and amount before any order update.
+  if (bodyId != null && queryDataId &&
+      String(bodyId).trim().toLowerCase() !== queryDataId) {
     return res.status(400).json({ error: 'Webhook resource ID mismatch' });
+  }
+  const dataId = queryDataId || (typeof bodyId === 'string' || typeof bodyId === 'number'
+    ? String(bodyId).trim().toLowerCase() : '');
+  if (!/^[a-z0-9_-]{1,128}$/.test(dataId)) {
+    return res.status(400).json({ error: 'Webhook payment identifier missing' });
   }
   if (typeof req.body?.type === 'string' &&
       typeof req.query.type === 'string' && req.body.type !== req.query.type) {
