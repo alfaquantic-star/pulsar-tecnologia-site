@@ -4,6 +4,7 @@ import { requireAdmin } from '../_lib/admin-auth.js';
 import { verifyCheckout, CheckoutError } from '../_lib/verify-checkout.js';
 import { buildPendingOrderDraft } from '../_lib/pending-order.js';
 import { merchantOrderMatchesPayment } from '../_lib/mp-merchant-order.js';
+import { isConfirmedTestUserPayment } from '../_lib/mp-test-user-identity.js';
 
 /**
  * Admin-only PREVIEW test flow. Customers cannot call this endpoint.
@@ -74,7 +75,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         testSellerTokenMatchesConfiguredId: String(seller.id) === sellerId,
         paymentBelongsToTestSeller: String(payment.collector_id) === sellerId,
         paymentIdMatches: String(payment.id) === paymentId,
-        paymentIsNotLive: payment.live_mode === false,
+        paymentIsSafeTestTransaction: isConfirmedTestUserPayment({
+          liveMode: payment.live_mode,
+          payerId: payment.payer?.id,
+          collectorId: payment.collector_id,
+          authenticatedSellerId: seller.id,
+          configuredSellerId: sellerId,
+          configuredBuyerId: process.env.PULSAR_MP_TEST_BUYER_ID,
+          accessToken: token
+        }),
         currencyIsBRL: payment.currency_id === 'BRL',
         paymentReferencesOrder: payment.external_reference === orderNumber,
         paymentApproved: payment.status === 'approved',
@@ -86,6 +95,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(422).json({
           error: 'O Mercado Pago não confirmou todos os requisitos. Nenhuma alteração foi feita no pedido.',
           checks,
+          testBuyerIdConfigured: /^\d{6,24}$/.test(process.env.PULSAR_MP_TEST_BUYER_ID || ''),
+          testBuyerIdentityMatched: String(payment.payer?.id) === String(process.env.PULSAR_MP_TEST_BUYER_ID || ''),
           statusCategory: payment.status === 'approved' ? 'approved' : 'not_approved'
         });
       }
