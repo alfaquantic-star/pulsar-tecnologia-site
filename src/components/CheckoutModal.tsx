@@ -61,6 +61,10 @@ export const CheckoutModal: React.FC = () => {
     lines?: Array<{ id: string; name: string; quantity: number; unitPrice: number; total: number }>;
   } | null>(null);
   const [testOrderKey, setTestOrderKey] = useState<string | null>(null);
+  const [verifyTestOrderNumber, setVerifyTestOrderNumber] = useState('');
+  const [verifyTestPaymentId, setVerifyTestPaymentId] = useState('');
+  const [isVerifyingTestPayment, setIsVerifyingTestPayment] = useState(false);
+  const [verifyTestPaymentResult, setVerifyTestPaymentResult] = useState<{ok:boolean;message:string}|null>(null);
   const [isCreatingTestOrder, setIsCreatingTestOrder] = useState(false);
   const [testOrderResult, setTestOrderResult] = useState<{
     success: boolean; message: string; orderNumber?: string; reused?: boolean;
@@ -202,6 +206,49 @@ export const CheckoutModal: React.FC = () => {
       setServerCartResult({ validated: false, message: 'Falha de conexão durante a validação.' });
     } finally {
       setIsCheckingCart(false);
+    }
+  };
+
+  const handleVerifyTestPayment = async () => {
+    setVerifyTestPaymentResult(null);
+    if (currentUser?.role !== 'admin') return;
+    if (!/^PLS-[0-9A-F]{24}$/.test(verifyTestOrderNumber.trim()) ||
+        !/^\d{7,24}$/.test(verifyTestPaymentId.trim())) {
+      setVerifyTestPaymentResult({ ok: false,
+        message: 'Informe o número do pedido PLS-... e o ID numérico do pagamento de TESTE.' });
+      return;
+    }
+    setIsVerifyingTestPayment(true);
+    try {
+      const { getSupabaseClient } = await import('../lib/supabase');
+      const client = getSupabaseClient();
+      const { data: { session } } = client
+        ? await client.auth.getSession() : { data: { session: null } };
+      if (!session?.access_token) throw Error('Faça login novamente como administrador.');
+      const response = await fetch('/api/mercadopago/create-preference', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + session.access_token,
+          'Content-Type': 'application/json'
+        },
+        cache: 'no-store',
+        body: JSON.stringify({
+          action: 'verify_test_payment',
+          orderNumber: verifyTestOrderNumber.trim(),
+          paymentId: verifyTestPaymentId.trim()
+        })
+      });
+      const result = await response.json().catch(() => ({}));
+      setVerifyTestPaymentResult({
+        ok: response.ok && result.success === true,
+        message: result.message || result.error || 'A API não retornou um resultado válido.'
+      });
+    } catch {
+      setVerifyTestPaymentResult({
+        ok: false, message: 'Não foi possível consultar o Mercado Pago neste momento.'
+      });
+    } finally {
+      setIsVerifyingTestPayment(false);
     }
   };
 
@@ -926,6 +973,27 @@ export const CheckoutModal: React.FC = () => {
                           className="w-full bg-blue-600/20 border border-blue-400/40 text-blue-100 p-3 rounded-lg font-bold disabled:opacity-50">
                           Criar preferência com vendedor de TESTE (quando habilitado)
                         </button>
+                        <div className="rounded-lg border border-emerald-500/30 bg-emerald-950/15 p-3 space-y-2">
+                          <p className="text-emerald-200 font-bold">Recuperar confirmação de pagamento de TESTE</p>
+                          <p className="text-slate-400">Consulta o pagamento diretamente no Mercado Pago. Apenas confirma se vendedor, preferência, valor, status e pedido corresponderem. Não realiza nova cobrança.</p>
+                          <input type="text" aria-label="Número do pedido de teste" placeholder="Número do pedido: PLS-..."
+                            value={verifyTestOrderNumber} onChange={e => setVerifyTestOrderNumber(e.target.value.toUpperCase())}
+                            className="w-full p-2 rounded-lg border border-white/20 bg-slate-900 text-white" />
+                          <input type="text" inputMode="numeric" aria-label="ID do pagamento de teste"
+                            placeholder="ID numérico do pagamento" value={verifyTestPaymentId}
+                            onChange={e => setVerifyTestPaymentId(e.target.value.replace(/\D/g,''))}
+                            className="w-full p-2 rounded-lg border border-white/20 bg-slate-900 text-white" />
+                          <button type="button" disabled={isVerifyingTestPayment}
+                            onClick={() => void handleVerifyTestPayment()}
+                            className="w-full rounded-lg border border-emerald-400/40 bg-emerald-600/25 p-3 font-bold text-emerald-100 disabled:opacity-50">
+                            {isVerifyingTestPayment ? 'Conferindo com Mercado Pago...' : 'Verificar pagamento aprovado no Mercado Pago'}
+                          </button>
+                          {verifyTestPaymentResult && (
+                            <p className={verifyTestPaymentResult.ok ? 'text-emerald-300' : 'text-amber-300'}>
+                              {verifyTestPaymentResult.message}
+                            </p>
+                          )}
+                        </div>
                         <button type="button" onClick={() => { setTestOrderKey(null); setTestOrderResult(null); }}
                           className="text-slate-300 underline">Nova tentativa de teste</button>
                         {testOrderResult && (
