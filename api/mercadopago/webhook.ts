@@ -1,5 +1,6 @@
 import { validateMercadoPagoSignature } from '../_lib/mp-webhook-signature.js';
 import { merchantOrderMatchesPayment } from '../_lib/mp-merchant-order.js';
+import { isConfirmedTestUserPayment } from '../_lib/mp-test-user-identity.js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 /** Signed Mercado Pago notification verification. Order updates are restricted
@@ -90,8 +91,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!updateSandboxOrder) {
       return res.status(200).json({ received: true, verified: true, orderUpdated: false });
     }
-    // A live payment must NEVER be processed by the sandbox test webhook.
-    if (payment.live_mode !== false || payment.status !== 'approved') {
+    // Do not approve anything but provider-confirmed approved payments.
+    // Live-mode alone is not conclusive for Checkout Pro test-user sessions.
+    if (payment.status !== 'approved') {
       return res.status(200).json({ received: true, verified: true, orderUpdated: false });
     }
     const sellerId = process.env.PULSAR_MP_TEST_SELLER_ID!;
@@ -102,6 +104,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
     if (!identity.ok) return res.status(503).json({ error: 'Seller identity unavailable' });
     const seller = await identity.json();
+    if (!isConfirmedTestUserPayment({
+      liveMode: payment.live_mode,
+      payerId: payment.payer?.id,
+      collectorId: payment.collector_id,
+      authenticatedSellerId: seller.id,
+      configuredSellerId: sellerId,
+      configuredBuyerId: process.env.PULSAR_MP_TEST_BUYER_ID,
+      accessToken: token
+    })) {
+      return res.status(403).json({ error: 'Test buyer identity could not be verified' });
+    }
     if (String(seller.id) !== sellerId || String(payment.collector_id) !== sellerId ||
         payment.currency_id !== 'BRL' || !Number.isFinite(Number(payment.transaction_amount))) {
       return res.status(403).json({ error: 'Wrong seller, amount or currency' });
