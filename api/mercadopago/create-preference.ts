@@ -68,15 +68,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
       const seller = await sellerResponse.json();
       const payment = await paymentResponse.json();
-      if (String(seller.id) !== sellerId || String(payment.collector_id) !== sellerId ||
-          String(payment.id) !== paymentId || payment.live_mode !== false ||
-          payment.currency_id !== 'BRL' || payment.external_reference !== orderNumber ||
-          payment.status !== 'approved' ||
-          !Number.isFinite(Number(payment.transaction_amount)) ||
-          Math.round(Number(payment.transaction_amount) * 100) !==
-            Math.round(Number(order.total_amount) * 100)) {
+      // Give the ADMIN a safe, specific failure reason without exposing
+      // token, personal details, provider response or secret credentials.
+      const checks = {
+        testSellerTokenMatchesConfiguredId: String(seller.id) === sellerId,
+        paymentBelongsToTestSeller: String(payment.collector_id) === sellerId,
+        paymentIdMatches: String(payment.id) === paymentId,
+        paymentIsNotLive: payment.live_mode === false,
+        currencyIsBRL: payment.currency_id === 'BRL',
+        paymentReferencesOrder: payment.external_reference === orderNumber,
+        paymentApproved: payment.status === 'approved',
+        amountMatchesOrder: Number.isFinite(Number(payment.transaction_amount)) &&
+          Math.round(Number(payment.transaction_amount) * 100) ===
+            Math.round(Number(order.total_amount) * 100)
+      };
+      if (Object.values(checks).some(ok => !ok)) {
         return res.status(422).json({
-          error: 'Pagamento não corresponde ao vendedor, ao pedido, ao valor ou não está aprovado no ambiente de teste.'
+          error: 'O Mercado Pago não confirmou todos os requisitos. Nenhuma alteração foi feita no pedido.',
+          checks,
+          statusCategory: payment.status === 'approved' ? 'approved' : 'not_approved'
         });
       }
       const merchantOrderId = String(payment.order?.id ?? '');
