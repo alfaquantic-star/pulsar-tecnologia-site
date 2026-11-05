@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { requireAdmin } from '../_lib/admin-auth.js';
 import { verifyCheckout, CheckoutError } from '../_lib/verify-checkout.js';
 import { buildPendingOrderDraft } from '../_lib/pending-order.js';
+import { merchantOrderMatchesPayment } from '../_lib/mp-merchant-order.js';
 
 /**
  * Admin-only PREVIEW test flow. Customers cannot call this endpoint.
@@ -24,6 +25,106 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!auth) return res.status(403).json({ error: 'Acesso administrativo necessário.' });
     const body = req.body;
     const action = body?.action;
+    // Recover an already completed TEST payment when notifications are
+    // unavailable. Admin authentication and seller-only test credentials
+    // are mandatory; this never relies on a browser's success URL.
+    if (action === 'verify_test_payment') {
+      if (process.env.PULSAR_ENABLE_MP_TEST_CHECKOUT !== 'true' ||
+          !process.env.MERCADO_PAGO_TEST_ACCESS_TOKEN?.trim() ||
+          !/^\d+$/.test(process.env.PULSAR_MP_TEST_SELLER_ID || '')) {
+        return res.status(503).json({ error: 'Conta de teste não configurada.' });
+      }
+      const paymentId = String(body?.paymentId ?? '').trim();
+      const orderNumber = String(body?.orderNumber ?? '').trim();
+      if (!/^\d{7,24}$/.test(paymentId) ||
+          !/^PLS-[0-9A-F]{24}$/.test(orderNumber)) {
+        return res.status(400).json({ error: 'Informe o número do pedido e o ID numérico do pagamento de teste.' });
+      }
+      const db = auth.db;
+      const result = await db.from('orders')
+        .select('id,order_number,total_amount,payment_status,mercado_pago_preference_id,mercado_pago_payment_id')
+        .eq('order_number', orderNumber).maybeSingle();
+      if (result.error || !result.data) {
+        return res.status(404).json({ error: 'Pedido de teste não encontrado.' });
+      }
+      const order = result.data;
+      if (!order.mercado_pago_preference_id ||
+          order.mercado_pago_preference_id.startsWith('creating:')) {
+        return res.status(409).json({ error: 'O pedido não possui uma preferência válida.' });
+      }
+      const token = process.env.MERCADO_PAGO_TEST_ACCESS_TOKEN!.trim();
+      const sellerId = process.env.PULSAR_MP_TEST_SELLER_ID!.trim();
+      const headers = { Authorization: 'Bearer ' + token, Accept: 'application/json' };
+      const [sellerResponse, paymentResponse] = await Promise.all([
+        fetch('https://api.mercadolibre.com/users/me', {
+          headers, signal: AbortSignal.timeout(10000), cache: 'no-store'
+        }),
+        fetch('https://api.mercadopago.com/v1/payments/' + paymentId, {
+          headers, signal: AbortSignal.timeout(10000), cache: 'no-store'
+        })
+      ]);
+      if (!sellerResponse.ok || !paymentResponse.ok) {
+        return res.status(502).json({ error: 'Mercado Pago não disponibilizou os dados do vendedor ou do pagamento.' });
+      }
+      const seller = await sellerResponse.json();
+      const payment = await paymentResponse.json();
+      if (String(seller.id) !== sellerId || String(payment.collector_id) !== sellerId ||
+          String(payment.id) !== paymentId || payment.live_mode !== false ||
+          payment.currency_id !== 'BRL' || payment.external_reference !== orderNumber ||
+          payment.status !== 'approved' ||
+          !Number.isFinite(Number(payment.transaction_amount)) ||
+          Math.round(Number(payment.transaction_amount) * 100) !==
+            Math.round(Number(order.total_amount) * 100)) {
+        return res.status(422).json({
+          error: 'Pagamento não corresponde ao vendedor, ao pedido, ao valor ou não está aprovado no ambiente de teste.'
+        });
+      }
+      const merchantOrderId = String(payment.order?.id ?? '');
+      if (!/^\d{1,24}$/.test(merchantOrderId)) {
+        return res.status(422).json({ error: 'Pagamento sem referência ao pedido comercial do Mercado Pago.' });
+      }
+      const merchantResponse = await fetch('https://api.mercadopago.com/merchant_orders/' + merchantOrderId, {
+        headers, signal: AbortSignal.timeout(10000), cache: 'no-store'
+      });
+      if (!merchantResponse.ok) {
+        return res.status(503).json({ error: 'Não foi possível consultar o pedido comercial do Mercado Pago.' });
+      }
+      const merchant = await merchantResponse.json();
+      if (!merchantOrderMatchesPayment(
+        merchant, merchantOrderId, paymentId, Number(payment.transaction_amount),
+        order.mercado_pago_preference_id, orderNumber
+      )) {
+        return res.status(422).json({ error: 'A preferência ou o pedido comercial não corresponde ao pagamento.' });
+      }
+      if (order.payment_status === 'approved') {
+        if (String(order.mercado_pago_payment_id) !== paymentId) {
+          return res.status(409).json({ error: 'Este pedido já possui outro pagamento aprovado.' });
+        }
+        return res.status(200).json({ success: true, alreadyVerified: true,
+          paymentStatus: 'approved', orderNumber,
+          message: 'Pagamento de teste já confirmado anteriormente.' });
+      }
+      if (order.payment_status !== 'pending') {
+        return res.status(409).json({ error: 'Pedido já não está pendente.' });
+      }
+      const change = await db.from('orders').update({
+        payment_status: 'approved', mercado_pago_payment_id: paymentId,
+        payment_verified_at: new Date().toISOString()
+      }).eq('id',order.id).eq('payment_status','pending')
+        .is('mercado_pago_payment_id',null)
+        .eq('total_amount',Number(order.total_amount))
+        .select('id').maybeSingle();
+      if (change.error) {
+        return res.status(503).json({ error: 'Não foi possível registrar a verificação no Supabase.' });
+      }
+      if (!change.data) {
+        return res.status(409).json({ error: 'O pedido mudou de status durante a verificação. Consulte novamente.' });
+      }
+      return res.status(200).json({ success: true, testOnly: true,
+        paymentStatus: 'approved', orderNumber,
+        message: 'Pagamento conferido diretamente no Mercado Pago e registrado no Supabase.' });
+    }
+
     if (action !== 'stage_order' && action !== 'create_test_preference') {
       return res.status(400).json({ error: 'Ação de teste inválida.' });
     }
