@@ -64,7 +64,7 @@ export const CheckoutModal: React.FC = () => {
   const [verifyTestOrderNumber, setVerifyTestOrderNumber] = useState('');
   const [verifyTestPaymentId, setVerifyTestPaymentId] = useState('');
   const [isVerifyingTestPayment, setIsVerifyingTestPayment] = useState(false);
-  const [verifyTestPaymentResult, setVerifyTestPaymentResult] = useState<{ok:boolean;message:string}|null>(null);
+  const [verifyTestPaymentResult, setVerifyTestPaymentResult] = useState<{ok:boolean;message:string;checks?:Record<string,boolean>}|null>(null);
   const [isCreatingTestOrder, setIsCreatingTestOrder] = useState(false);
   const [testOrderResult, setTestOrderResult] = useState<{
     success: boolean; message: string; orderNumber?: string; reused?: boolean;
@@ -241,7 +241,8 @@ export const CheckoutModal: React.FC = () => {
       const result = await response.json().catch(() => ({}));
       setVerifyTestPaymentResult({
         ok: response.ok && result.success === true,
-        message: result.message || result.error || 'A API não retornou um resultado válido.'
+        message: result.message || result.error || 'A API não retornou um resultado válido.',
+        checks: result.checks && typeof result.checks === 'object' ? result.checks : undefined
       });
     } catch {
       setVerifyTestPaymentResult({
@@ -992,6 +993,15 @@ export const CheckoutModal: React.FC = () => {
                             <p className={verifyTestPaymentResult.ok ? 'text-emerald-300' : 'text-amber-300'}>
                               {verifyTestPaymentResult.message}
                             </p>
+                          )}
+                          {verifyTestPaymentResult?.checks && (
+                            <div className="space-y-1 text-xs">
+                              {Object.entries(verifyTestPaymentResult.checks).map(([name, ok]) => (
+                                <p key={name} className={ok ? 'text-emerald-300' : 'text-amber-300'}>
+                                  {ok ? 'OK' : 'Pendente'} — {name}
+                                </p>
+                              ))}
+                            </div>
                           )}
                         </div>
                         <button type="button" onClick={() => { setTestOrderKey(null); setTestOrderResult(null); }}
