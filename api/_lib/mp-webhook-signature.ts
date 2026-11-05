@@ -14,9 +14,11 @@ export function validateMercadoPagoSignature(request: SignatureRequest, secret: 
 
   const signature = request.signature;
   const requestId = request.requestId;
+  // The official manifest omits the id pair when the notification URL
+  // does not contain data.id. Keep the HMAC mandatory in every case.
   const dataId = request.dataId.trim().toLowerCase();
   if (signature.length > 1024 || !requestId || requestId.length > 200 ||
-      !/^[a-z0-9_-]{1,128}$/.test(dataId)) return false;
+      (dataId !== '' && !/^[a-z0-9_-]{1,128}$/.test(dataId))) return false;
 
   const parts = Object.fromEntries(signature.split(',').map(part => {
     const [key, ...value] = part.split('=');
@@ -31,7 +33,7 @@ export function validateMercadoPagoSignature(request: SignatureRequest, secret: 
   // Mercado Pago can retry signed notifications after the original delivery.
   // Do not expire otherwise valid HMAC signatures based on clock skew. Replay
   // safety is enforced via order idempotency and conditional DB transitions.
-  const manifest = `id:${dataId};request-id:${requestId};ts:${ts};`;
+  const manifest = `${dataId ? `id:${dataId};` : ''}request-id:${requestId};ts:${ts};`;
   const expected = createHmac('sha256', secret).update(manifest).digest();
   const received = Buffer.from(receivedHash, 'hex');
   return received.length === expected.length && timingSafeEqual(expected, received);
