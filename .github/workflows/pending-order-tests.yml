@@ -39,6 +39,7 @@ jobs:
           bunx esbuild api/mercadopago/webhook.ts --bundle --platform=node --format=esm --packages=external --outfile=/tmp/webhook.mjs
           bunx esbuild api/admin/me.ts --bundle --platform=node --format=esm --packages=external --outfile=/tmp/admin-me.mjs
           bunx esbuild supabase/functions/pulsar-mp-test-ingress/index.ts --bundle --platform=browser --format=esm --outfile=/tmp/mp-test-ingress.mjs
+          bunx esbuild supabase/functions/pulsar-mp-test-queue-worker/index.ts --bundle --platform=browser --format=esm --outfile=/tmp/mp-test-queue-worker.mjs
 
 
   rls-cutover-sandbox:
@@ -82,5 +83,6 @@ jobs:
         run: |
           psql --set ON_ERROR_STOP=1 -c "CREATE ROLE service_role NOLOGIN BYPASSRLS;"
           psql --set ON_ERROR_STOP=1 --file supabase/migrations/20261105_prepare_test_webhook_inbox.sql
+          psql --set ON_ERROR_STOP=1 --file supabase/migrations/20261106_prepare_mp_test_queue_worker.sql
           psql --set ON_ERROR_STOP=1 -At -c "SELECT NOT has_table_privilege('anon','public.pulsar_mp_test_webhook_inbox','SELECT') AND NOT has_table_privilege('authenticated','public.pulsar_mp_test_webhook_inbox','INSERT') AND has_table_privilege('service_role','public.pulsar_mp_test_webhook_inbox','INSERT');" | grep -qx t
 
