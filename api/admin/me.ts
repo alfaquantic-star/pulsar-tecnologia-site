@@ -31,8 +31,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         recorded: Boolean(data),
         diagnostics: data || null,
         message: data
-          ? 'Última rejeição de assinatura registrada. Nenhuma credencial é exibida.'
-          : 'Nenhuma rejeição de assinatura registrada nesta versão.'
+          ? 'Última tentativa POST recebida pelo webhook. Nenhuma credencial é exibida.'
+          : 'Nenhuma tentativa POST registrada nesta versão; verifique a URL de destino e a entrega da notificação.'
       });
     }
 
