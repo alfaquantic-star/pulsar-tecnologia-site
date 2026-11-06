@@ -189,6 +189,20 @@ export const AdminPanel: React.FC = () => {
   const [isTestingMelhorEnvio, setIsTestingMelhorEnvio] = useState(false);
   const [melhorEnvioTestResult, setMelhorEnvioTestResult] = useState<{ success: boolean; message: string; environment?: string; availableOptions?: number } | null>(null);
   const [isCheckingCheckout, setIsCheckingCheckout] = useState(false);
+  const [isCheckingWebhook, setIsCheckingWebhook] = useState(false);
+  const [webhookDiagnostics, setWebhookDiagnostics] = useState<{
+    recorded: boolean;
+    diagnostics: null | {
+      last_attempt_at: string;
+      signature_header_present: boolean;
+      request_id_header_present: boolean;
+      query_data_id_present: boolean;
+      body_data_id_present: boolean;
+      signature_format_valid: boolean;
+      signature_verified: boolean;
+    };
+    message: string;
+  } | null>(null);
   const [checkoutReadiness, setCheckoutReadiness] = useState<{
     readyForPayments: boolean;
     checks: Record<string, boolean>;
@@ -545,6 +559,36 @@ export const AdminPanel: React.FC = () => {
       showToast('Falha na consulta de prontidão do checkout.', 'error');
     } finally {
       setIsCheckingCheckout(false);
+    }
+  };
+
+  const handleCheckWebhookDiagnostics = async () => {
+    setIsCheckingWebhook(true);
+    setWebhookDiagnostics(null);
+    try {
+      const { getSupabaseClient } = await import('../lib/supabase');
+      const client = getSupabaseClient();
+      const { data: { session } } = client
+        ? await client.auth.getSession()
+        : { data: { session: null } };
+      if (!session?.access_token) {
+        showToast('Entre novamente como administrador.', 'error');
+        return;
+      }
+      const response = await fetch('/api/admin/me?check=webhook', {
+        headers: { Authorization: 'Bearer ' + session.access_token },
+        cache: 'no-store'
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        showToast(result.error || 'Diagnóstico de webhook indisponível.', 'error');
+        return;
+      }
+      setWebhookDiagnostics(result);
+    } catch {
+      showToast('Falha ao consultar o webhook.', 'error');
+    } finally {
+      setIsCheckingWebhook(false);
     }
   };
 
@@ -2051,6 +2095,35 @@ export const AdminPanel: React.FC = () => {
                       </div>
                     ))}
                     <p className="text-amber-200">{checkoutReadiness.message}</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-2xl border border-amber-500/25 bg-amber-950/15 p-4 space-y-3">
+                <p className="font-extrabold text-sm text-white">Diagnóstico seguro do Webhook Mercado Pago</p>
+                <p className="text-xs text-slate-400">Mostra somente presença de campos da última rejeição em Preview, sem revelar assinatura, credenciais ou dados do comprador.</p>
+                <button type="button" onClick={handleCheckWebhookDiagnostics} disabled={isCheckingWebhook}
+                  className="rounded-xl border border-amber-400/40 bg-amber-500/15 p-3 text-xs text-amber-200 font-bold disabled:opacity-50">
+                  {isCheckingWebhook ? 'Consultando...' : 'Verificar última notificação rejeitada'}
+                </button>
+                {webhookDiagnostics && (
+                  <div className="text-xs space-y-2">
+                    <p className="text-slate-300">{webhookDiagnostics.message}</p>
+                    {webhookDiagnostics.diagnostics && (
+                      <>
+                        <p className="text-slate-400">Registrado em: {webhookDiagnostics.diagnostics.last_attempt_at}</p>
+                        {Object.entries(webhookDiagnostics.diagnostics)
+                          .filter(([field]) => field !== 'last_attempt_at')
+                          .map(([field, value]) => (
+                            <div key={field} className="flex items-center justify-between gap-3">
+                              <span className="text-slate-300 break-all">{field}</span>
+                              <span className={value ? 'text-emerald-300' : 'text-amber-300'}>
+                                {value ? 'Sim' : 'Não'}
+                              </span>
+                            </div>
+                          ))}
+                      </>
+                    )}
                   </div>
                 )}
               </div>
