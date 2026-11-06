@@ -1,19 +1,21 @@
 /**
- * A Mercado Pago notification is a server-to-server POST. The provider cannot
- * send Vercel's private Preview bypass header, so an ephemeral VERCEL_URL is
- * NOT a safe default for the Checkout Pro notification_url.
+ * The public Supabase test ingress is a narrow receiver for signed Mercado
+ * Pago notifications. It queues payment IDs but does NOT approve orders.
+ *
+ * Do not configure a deployment-specific Vercel Preview URL: the provider
+ * cannot supply Vercel's private protection bypass header.
  */
+const TEST_INGRESS_ORIGIN = 'https://srvctqtmlbkmgiazgsrj.supabase.co';
+const TEST_INGRESS_PATH = '/functions/v1/pulsar-mp-test-ingress';
+
 export function parseTestWebhookUrl(raw: string | undefined): URL | null {
   if (!raw) return null;
   try {
     const url = new URL(raw);
-    if (url.protocol !== 'https:' || url.username || url.password ||
-        url.port || url.search || url.hash ||
-        url.pathname !== '/api/mercadopago/webhook' ||
-        url.hostname === 'localhost' || !/^[a-z0-9.-]+\.[a-z]{2,}$/i.test(url.hostname) ||
-        url.hostname.endsWith('.localhost') || url.hostname.endsWith('.local')) {
-      return null;
-    }
+    if (url.origin !== TEST_INGRESS_ORIGIN ||
+        url.pathname !== TEST_INGRESS_PATH ||
+        url.search !== '' || url.hash !== '' ||
+        url.username !== '' || url.password !== '') return null;
     return url;
   } catch {
     return null;
@@ -21,16 +23,20 @@ export function parseTestWebhookUrl(raw: string | undefined): URL | null {
 }
 
 export async function isPublicWebhookReachable(url: URL): Promise<boolean> {
+  if (!parseTestWebhookUrl(url.toString())) return false;
   try {
-    // The webhook rejects GET with JSON 405. That distinguishes a reachable
-    // handler from Vercel Deployment Protection (typically 401/403 + HTML).
     const response = await fetch(url, {
       method: 'GET', redirect: 'manual', cache: 'no-store',
       signal: AbortSignal.timeout(7000)
     });
-    return response.status === 405 &&
-      (response.headers.get('content-type') || '').includes('application/json') &&
-      (await response.json().catch(() => null))?.error === 'Method not allowed';
+    if (!response.ok || !(response.headers.get('content-type') || '').includes('application/json')) {
+      return false;
+    }
+    const health = await response.json().catch(() => null);
+    return health?.service === 'pulsar-mp-test-ingress' &&
+      health?.environment === 'test' &&
+      health?.signingReady === true &&
+      health?.paymentUpdatesEnabled === false;
   } catch {
     return false;
   }
