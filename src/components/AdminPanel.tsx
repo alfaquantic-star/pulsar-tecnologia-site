@@ -198,6 +198,9 @@ export const AdminPanel: React.FC = () => {
     databaseDiagnosticRecorded?: boolean;
     databaseDiagnosticSignatureVerified?: boolean;
     diagnosticDbErrorCode?: string | null;
+    possibleVercelProtection?: boolean;
+    responseIsJson?: boolean;
+    target?: string;
     message?: string; error?: string;
   } | null>(null);
   const [webhookDiagnostics, setWebhookDiagnostics] = useState<{
@@ -2155,6 +2158,13 @@ export const AdminPanel: React.FC = () => {
                     <p>Assinatura aceita: {webhookProbe.webhookSignatureAccepted ? 'Sim' : 'Não'}</p>
                     <p>Diagnóstico registrado: {webhookProbe.databaseDiagnosticRecorded ? 'Sim' : 'Não'}</p>
                     <p>HMAC verificado no banco: {webhookProbe.databaseDiagnosticSignatureVerified ? 'Sim' : 'Não'}</p>
+                    {webhookProbe.target && <p>Destino: {webhookProbe.target === 'public_preview_branch_alias' ? 'URL pública da branch Preview' : webhookProbe.target}</p>}
+                    {webhookProbe.possibleVercelProtection && (
+                      <p className="text-red-300 font-bold">Possível bloqueio pela proteção de deployment da Vercel (HTTP 401/403 antes da função).</p>
+                    )}
+                    {webhookProbe.responseIsJson === false && (
+                      <p className="text-amber-300">A resposta não é JSON da API; a requisição pode ter sido interceptada antes do webhook.</p>
+                    )}
                     {webhookProbe.diagnosticDbErrorCode && <p>Código do banco: {webhookProbe.diagnosticDbErrorCode}</p>}
                   </div>
                 )}
