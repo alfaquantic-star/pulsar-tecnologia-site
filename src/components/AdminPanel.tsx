@@ -200,6 +200,9 @@ export const AdminPanel: React.FC = () => {
     diagnosticDbErrorCode?: string | null;
     possibleVercelProtection?: boolean;
     responseIsJson?: boolean;
+    supabaseHttpStatus?: number | null;
+    supabaseSignatureAccepted?: boolean;
+    signatureSecretsConsistent?: boolean;
     target?: string;
     message?: string; error?: string;
   } | null>(null);
@@ -2158,6 +2161,14 @@ export const AdminPanel: React.FC = () => {
                     <p>Assinatura aceita: {webhookProbe.webhookSignatureAccepted ? 'Sim' : 'Não'}</p>
                     <p>Diagnóstico registrado: {webhookProbe.databaseDiagnosticRecorded ? 'Sim' : 'Não'}</p>
                     <p>HMAC verificado no banco: {webhookProbe.databaseDiagnosticSignatureVerified ? 'Sim' : 'Não'}</p>
+                    <div className="mt-3 rounded-lg border border-white/15 p-2 space-y-1">
+                      <p className="font-bold text-white">Verificação cruzada Vercel × Supabase</p>
+                      <p>Supabase HTTP: {webhookProbe.supabaseHttpStatus ?? 'Indisponível'}</p>
+                      <p>Assinatura aceita no Supabase: {webhookProbe.supabaseSignatureAccepted ? 'Sim' : 'Não'}</p>
+                      <p className={webhookProbe.signatureSecretsConsistent ? 'text-emerald-300' : 'text-amber-300'}>
+                        Mesma assinatura validada nos dois ambientes: {webhookProbe.signatureSecretsConsistent ? 'Sim' : 'Não'}
+                      </p>
+                    </div>
                     {webhookProbe.target && <p>Destino: {webhookProbe.target === 'public_preview_branch_alias' ? 'URL pública da branch Preview' : webhookProbe.target}</p>}
                     {webhookProbe.possibleVercelProtection && (
                       <p className="text-red-300 font-bold">Possível bloqueio pela proteção de deployment da Vercel (HTTP 401/403 antes da função).</p>
