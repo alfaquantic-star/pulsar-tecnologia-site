@@ -9,3 +9,7 @@ create table if not exists public.pulsar_mp_test_webhook_inbox (
 );
 alter table public.pulsar_mp_test_webhook_inbox enable row level security;
 revoke all on public.pulsar_mp_test_webhook_inbox from public, anon, authenticated;
+
+-- This table has no browser policies; give access only to the server role.
+grant select, insert on public.pulsar_mp_test_webhook_inbox to service_role;
+grant usage, select on sequence public.pulsar_mp_test_webhook_inbox_id_seq to service_role;
