@@ -1,5 +1,5 @@
-import { merchantOrderMatchesPayment } from './mp-merchant-order.js';
-import { isConfirmedTestUserPayment } from './mp-test-user-identity.js';
+import { merchantOrderMatchesPayment } from './mp-merchant-order.ts';
+import { isConfirmedTestUserPayment } from './mp-test-user-identity.ts';
 
 /** Pure validation of untrusted provider responses. NEVER approves orders. */
 export function verifyQueuedTestPayment(input: {
