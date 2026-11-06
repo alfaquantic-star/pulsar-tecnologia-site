@@ -2,30 +2,40 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseTestWebhookUrl, isPublicWebhookReachable } from '../api/_lib/mp-test-webhook-url.ts';
 
-test('accepts only an https webhook URL without credentials or query bypass tokens', () => {
-  assert.equal(parseTestWebhookUrl('https://example.com/api/mercadopago/webhook')?.hostname, 'example.com');
+const ingress = 'https://srvctqtmlbkmgiazgsrj.supabase.co/functions/v1/pulsar-mp-test-ingress';
+
+test('accepts only the known isolated Supabase test ingress URL', () => {
+  assert.equal(parseTestWebhookUrl(ingress)?.toString(), ingress);
   for (const input of [
     undefined,
-    'http://example.com/api/mercadopago/webhook',
-    'https://localhost/api/mercadopago/webhook',
-    'https://example.com/api/mercadopago/webhook?x-vercel-protection-bypass=secret',
-    'https://alice:password@example.com/api/mercadopago/webhook',
-    'https://example.com/other',
-    'https://example.com/api/mercadopago/webhook#fragment'
+    'http://srvctqtmlbkmgiazgsrj.supabase.co/functions/v1/pulsar-mp-test-ingress',
+    'https://localhost/functions/v1/pulsar-mp-test-ingress',
+    'https://pulsar-tecnologia-site.vercel.app/api/mercadopago/webhook',
+    ingress + '?x-vercel-protection-bypass=secret',
+    'https://user:password@srvctqtmlbkmgiazgsrj.supabase.co/functions/v1/pulsar-mp-test-ingress',
+    ingress + '/unexpected',
+    ingress + '#fragment'
   ]) assert.equal(parseTestWebhookUrl(input), null);
 });
 
-test('rejects Vercel-authenticated preview responses and accepts public handler', async () => {
+test('requires a healthy, signing-ready test-only receiver', async () => {
   const original = globalThis.fetch;
-  const url = new URL('https://example.com/api/mercadopago/webhook');
+  const url = new URL(ingress);
   try {
     globalThis.fetch = async () => new Response('<html>login</html>', {
       status: 401, headers: { 'Content-Type': 'text/html' }
     });
     assert.equal(await isPublicWebhookReachable(url), false);
-
-    globalThis.fetch = async () => Response.json({ error: 'Method not allowed' }, { status: 405 });
+    globalThis.fetch = async () => Response.json({
+      service: 'pulsar-mp-test-ingress', environment: 'test',
+      signingReady: true, paymentUpdatesEnabled: false
+    });
     assert.equal(await isPublicWebhookReachable(url), true);
+    globalThis.fetch = async () => Response.json({
+      service: 'pulsar-mp-test-ingress', environment: 'test',
+      signingReady: true, paymentUpdatesEnabled: true
+    });
+    assert.equal(await isPublicWebhookReachable(url), false);
   } finally {
     globalThis.fetch = original;
   }
