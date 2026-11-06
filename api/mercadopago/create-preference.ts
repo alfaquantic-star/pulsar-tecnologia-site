@@ -5,6 +5,7 @@ import { verifyCheckout, CheckoutError } from '../_lib/verify-checkout.js';
 import { buildPendingOrderDraft } from '../_lib/pending-order.js';
 import { merchantOrderMatchesPayment } from '../_lib/mp-merchant-order.js';
 import { isConfirmedTestUserPayment } from '../_lib/mp-test-user-identity.js';
+import { parseTestWebhookUrl, isPublicWebhookReachable } from '../_lib/mp-test-webhook-url.js';
 
 /**
  * Admin-only PREVIEW test flow. Customers cannot call this endpoint.
@@ -157,6 +158,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
          !/^\d+$/.test(process.env.PULSAR_MP_TEST_SELLER_ID || ''))) {
       return res.status(503).json({ error: 'Conta vendedora de teste ainda não habilitada na Vercel. Nenhum pedido foi criado.' });
     }
+    // Verify a PUBLIC notification URL before staging any order. Provider
+    // requests cannot carry Vercel's private Preview automation bypass.
+    let verifiedTestWebhookUrl: URL | null = null;
+    if (action === 'create_test_preference') {
+      verifiedTestWebhookUrl = parseTestWebhookUrl(process.env.PULSAR_MP_TEST_WEBHOOK_URL);
+      if (!verifiedTestWebhookUrl ||
+          !await isPublicWebhookReachable(verifiedTestWebhookUrl)) {
+        return res.status(503).json({
+          error: 'Webhook de teste não está público e acessível pelo Mercado Pago. Configure PULSAR_MP_TEST_WEBHOOK_URL para um endpoint público da branch de teste antes de criar outra preferência.'
+        });
+      }
+    }
     if (body.coupon && String(body.coupon).trim()) {
       return res.status(422).json({ error: 'Cupons ainda não autorizados pelo backend. Retire o cupom para testar.' });
     }
@@ -288,7 +301,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             pending: 'https://' + host + '/?payment=pending',
             failure: 'https://' + host + '/?payment=failure'
           },
-          notification_url: 'https://' + host + '/api/mercadopago/webhook'
+          notification_url: verifiedTestWebhookUrl!.toString()
         }),
         signal: AbortSignal.timeout(10000),
         cache: 'no-store'
