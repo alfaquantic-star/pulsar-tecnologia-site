@@ -71,7 +71,9 @@ export const CustomerArea: React.FC = () => {
     );
   }
 
-  // This local profile is NOT authenticated. Do not fetch orders using its email.\n  // Server-side identity verification is required before enabling customer order history.\n  // Filter only already-local ephemeral orders shown to this browser.
+  // This local profile is NOT authenticated. Do not fetch orders using its email.
+  // Server-side identity verification is required before enabling customer order history.
+  // Filter only already-local ephemeral orders shown to this browser.
   const myOrders = orders.filter(
     (o) => o.customerId === currentUser.id || o.customerEmail.toLowerCase() === currentUser.email.toLowerCase()
   );
