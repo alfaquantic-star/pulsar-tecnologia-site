@@ -52,14 +52,26 @@ Deno.serve(async request => {
     return respond({error:'invalid_resource_id'},400);
 
   const endpoint = Deno.env.get('SUPABASE_URL');
-  const key = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  const legacyServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')?.trim();
+  let key = legacyServiceKey;
+  if (!key) {
+    try {
+      const parsed: unknown = JSON.parse(Deno.env.get('SUPABASE_SECRET_KEYS') || '{}');
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const defaultSecret = (parsed as Record<string, unknown>).default;
+        if (typeof defaultSecret === 'string' && defaultSecret.startsWith('sb_secret_'))
+          key = defaultSecret;
+      }
+    } catch { /* fail closed */ }
+  }
   if (!endpoint || !key) return respond({error:'database_unavailable'},503);
 
   try {
     const stored = await fetch(endpoint + '/rest/v1/pulsar_mp_test_webhook_inbox?on_conflict=event_type,resource_id', {
       method:'POST', cache:'no-store', signal: AbortSignal.timeout(6000),
       headers: {
-        'apikey':key, 'Authorization':'Bearer ' + key,
+        'apikey':key,
+        ...(legacyServiceKey ? { 'Authorization':'Bearer ' + legacyServiceKey } : {}),
         'Content-Type':'application/json',
         'Prefer':'resolution=ignore-duplicates,return=minimal'
       },
