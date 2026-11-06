@@ -38,6 +38,7 @@ jobs:
           bunx esbuild api/mercadopago/create-preference.ts --bundle --platform=node --format=esm --packages=external --outfile=/tmp/checkout.mjs
           bunx esbuild api/mercadopago/webhook.ts --bundle --platform=node --format=esm --packages=external --outfile=/tmp/webhook.mjs
           bunx esbuild api/admin/me.ts --bundle --platform=node --format=esm --packages=external --outfile=/tmp/admin-me.mjs
+          bunx esbuild api/admin/webhook-probe.ts --bundle --platform=node --format=esm --packages=external --outfile=/tmp/webhook-probe.mjs
 
   rls-cutover-sandbox:
     runs-on: ubuntu-latest
