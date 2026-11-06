@@ -219,6 +219,10 @@ export const AdminPanel: React.FC = () => {
     };
     message: string;
   } | null>(null);
+  const [isVerifyingQueuedPayment, setIsVerifyingQueuedPayment] = useState(false);
+  const [queuedPaymentVerification, setQueuedPaymentVerification] = useState<{
+    checked?: boolean; verified?: boolean; reason?: string; message?: string;
+  } | null>(null);
   const [isCheckingWebhookInbox, setIsCheckingWebhookInbox] = useState(false);
   const [webhookInbox, setWebhookInbox] = useState<{
     checked: boolean;
@@ -610,6 +614,36 @@ export const AdminPanel: React.FC = () => {
     } catch {
       setWebhookProbe({ success:false, error:'Falha de conexão com o autoteste interno.' });
     } finally { setIsProbingWebhook(false); }
+  };
+
+  const handleVerifyQueuedPayment = async () => {
+    setIsVerifyingQueuedPayment(true);
+    setQueuedPaymentVerification(null);
+    try {
+      const { getSupabaseClient } = await import('../lib/supabase');
+      const client = getSupabaseClient();
+      const { data: { session } } = client
+        ? await client.auth.getSession() : { data: { session: null } };
+      if (!session?.access_token) {
+        showToast('Entre novamente como administrador.', 'error');
+        return;
+      }
+      const response = await fetch('/api/admin/me?check=webhook_queue_verify', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + session.access_token },
+        cache: 'no-store'
+      });
+      const result = await response.json().catch(() => ({}));
+      setQueuedPaymentVerification({
+        ...result,
+        verified: response.ok && result.verified === true
+      });
+    } catch {
+      setQueuedPaymentVerification({ checked:false, verified:false,
+        message:'Falha ao verificar pagamento de teste.' });
+    } finally {
+      setIsVerifyingQueuedPayment(false);
+    }
   };
 
   const handleCheckWebhookInbox = async () => {
@@ -2194,6 +2228,19 @@ export const AdminPanel: React.FC = () => {
                   className="rounded-xl border border-cyan-400/40 bg-cyan-500/15 p-3 text-xs text-cyan-200 font-bold disabled:opacity-50">
                   {isCheckingWebhookInbox ? 'Consultando fila...' : 'Verificar fila de pagamentos de TESTE'}
                 </button>
+                <button type="button" onClick={handleVerifyQueuedPayment} disabled={isVerifyingQueuedPayment}
+                  className="rounded-xl border border-sky-400/40 bg-sky-500/15 p-3 text-xs text-sky-200 font-bold disabled:opacity-50">
+                  {isVerifyingQueuedPayment ? 'Conferindo Mercado Pago...' : 'Verificar evento da fila no Mercado Pago (sem aprovar)'}
+                </button>
+                {queuedPaymentVerification && (
+                  <div className="rounded-lg border border-sky-500/30 p-3 text-xs text-slate-200 space-y-1">
+                    <p>{queuedPaymentVerification.message || 'Verificação indisponível.'}</p>
+                    <p className={queuedPaymentVerification.verified ? 'text-emerald-300' : 'text-amber-300'}>
+                      Pagamento conferido: {queuedPaymentVerification.verified ? 'Sim' : 'Não'}
+                    </p>
+                    <p>Nenhum pedido ou status da fila foi alterado.</p>
+                  </div>
+                )}
                 {webhookInbox && (
                   <div className="rounded-lg border border-cyan-500/30 p-3 text-xs text-slate-200 space-y-1">
                     <p>{webhookInbox.message}</p>
