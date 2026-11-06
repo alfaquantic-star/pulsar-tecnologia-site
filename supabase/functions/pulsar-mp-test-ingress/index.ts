@@ -40,7 +40,20 @@ Deno.serve(async request => {
     secret, request.headers.get('x-signature'),
     request.headers.get('x-request-id'), idQuery
   );
-  if (!signed) return respond({error:'invalid_signature'},401);
+  if (!signed) {
+    // Safe telemetry only. No secret, signature value, raw headers or payload.
+    const signatureHeader = request.headers.get('x-signature');
+    console.warn('pulsar_test_webhook_signature_rejected', {
+      signaturePresent: Boolean(signatureHeader),
+      signatureShapeValid: Boolean(signatureHeader &&
+        /(?:^|,)\\s*ts=\\d{10,13}(?:,|$)/.test(signatureHeader) &&
+        /(?:^|,)\\s*v1=[a-fA-F0-9]{64}(?:,|$)/.test(signatureHeader)),
+      requestIdPresent: Boolean(request.headers.get('x-request-id')),
+      queryIdPresent: Boolean(idQuery),
+      bodyIdPresent: Boolean(idBody)
+    });
+    return respond({error:'invalid_signature'},401);
+  }
 
   const kind = body.type || url.searchParams.get('type');
   if (body.type && url.searchParams.get('type') &&
