@@ -712,7 +712,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Customer identity requires verified email OTP, never a typed email.
   const requestCustomerOtp = async (email: string): Promise<boolean> => {
     const clean = email.trim().toLowerCase();
-    if (!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(clean)) return false;
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(clean)) return false;
     const client = getSupabaseClient();
     if (!client) return false;
     try {
@@ -724,7 +724,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const verifyCustomerOtp = async (email: string, token: string): Promise<boolean> => {
     const clean = email.trim().toLowerCase();
     const client = getSupabaseClient();
-    if (!client || !/^\\d{6,8}$/.test(token.trim())) return false;
+    if (!client || !/^\d{6,8}$/.test(token.trim())) return false;
     try {
       const verified = await client.auth.verifyOtp({ email: clean, token: token.trim(), type: 'email' });
       if (verified.error || !verified.data.session?.access_token) return false;
