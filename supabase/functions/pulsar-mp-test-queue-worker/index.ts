@@ -1,4 +1,5 @@
 import { validateQueuedSandboxPayment } from './validation.ts';
+import { workerBearerAuthorized } from './auth.ts';
 
 /**
  * STAGED — deliberately NOT deployed or scheduled until the isolated
@@ -23,22 +24,10 @@ function dbCredentials(): { url: string; key: string; legacy: boolean } | null {
   if (!url || !/^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(url) || !key) return null;
   return { url, key, legacy: Boolean(legacyKey) };
 }
-async function matchesBearer(req: Request, expected: string): Promise<boolean> {
-  const auth = req.headers.get('Authorization') ?? '';
-  if (!auth.startsWith('Bearer ') || expected.length < 32) return false;
-  const supplied = auth.slice(7);
-  const digest = async (s: string) =>
-    new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s)));
-  const [left, right] = await Promise.all([digest(supplied), digest(expected)]);
-  let diff = supplied.length === expected.length ? 0 : 1;
-  for (let i = 0; i < left.length; i++) diff |= left[i] ^ right[i];
-  return diff === 0;
-}
-
 Deno.serve(async request => {
   if (request.method !== 'POST') return json({ error: 'method_not_allowed' }, 405);
   const secret = Deno.env.get('PULSAR_TEST_QUEUE_WORKER_SECRET')?.trim();
-  if (!secret || !await matchesBearer(request, secret))
+  if (!await workerBearerAuthorized(request.headers.get('Authorization'), secret))
     return json({ error: 'unauthorized' }, 401);
   if (Deno.env.get('PULSAR_ENABLE_TEST_QUEUE_WORKER') !== 'true')
     return json({ error: 'test_worker_disabled' }, 503);
