@@ -166,7 +166,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!verifiedTestWebhookUrl ||
           !await isPublicWebhookReachable(verifiedTestWebhookUrl)) {
         return res.status(503).json({
-          error: 'Webhook de teste não está público e acessível pelo Mercado Pago. Configure PULSAR_MP_TEST_WEBHOOK_URL para um endpoint público da branch de teste antes de criar outra preferência.'
+          error: 'Webhook de teste Supabase indisponível. Configure PULSAR_MP_TEST_WEBHOOK_URL para a Edge Function pública de testes e confirme que ela valida assinaturas antes de criar outra preferência.'
         });
       }
     }
