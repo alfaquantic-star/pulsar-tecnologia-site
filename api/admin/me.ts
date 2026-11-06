@@ -57,6 +57,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         },
         body: JSON.stringify({type:'diagnostic',action:'internal.probe',data:{id:resourceId}})
       });
+      // A second signed, NON-PAYMENT diagnostic request verifies whether
+      // the Supabase Edge Function uses the same webhook secret as Vercel.
+      // Never forward the Vercel bypass secret to Supabase.
+      let supabaseHttpStatus: number | null = null;
+      let supabaseSignatureAccepted = false;
+      try {
+        const supabaseResponse = await fetch(
+          'https://srvctqtmlbkmgiazgsrj.supabase.co/functions/v1/pulsar-mp-test-ingress?data.id=diagnostic&type=diagnostic',
+          {
+            method: 'POST', cache: 'no-store',
+            signal: AbortSignal.timeout(9000),
+            headers: {
+              'Content-Type': 'application/json',
+              'x-request-id': requestId,
+              'x-signature': `ts=${timestamp},v1=${digest}`
+            },
+            body: JSON.stringify({type:'diagnostic',action:'internal.probe',data:{id:resourceId}})
+          }
+        );
+        supabaseHttpStatus = supabaseResponse.status;
+        if (supabaseResponse.ok) {
+          const check = await supabaseResponse.json().catch(() => null);
+          supabaseSignatureAccepted =
+            check?.received === true && check?.ignored === true;
+        }
+      } catch {
+        // Network failures are reported as unavailable, never treated as success.
+      }
       const contentType = response.headers.get('content-type') || '';
       const vercelAuthRedirect = Boolean(response.headers.get('location')?.includes('vercel.com'));
       let body: Record<string,unknown> = {};
@@ -75,6 +103,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         success: webhookSignatureAccepted && !diag.error && diag.data?.signature_verified === true,
         routeHttpStatus: response.status,
         webhookSignatureAccepted,
+        supabaseHttpStatus,
+        supabaseSignatureAccepted,
+        signatureSecretsConsistent: webhookSignatureAccepted && supabaseSignatureAccepted,
         target: 'public_preview_branch_alias',
         responseIsJson: contentType.includes('application/json'),
         possibleVercelProtection: responseLooksLikeVercelProtection,
