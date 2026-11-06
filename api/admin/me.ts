@@ -143,6 +143,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     }
 
+    // Preview-only and admin-only inbox health: never expose payment IDs,
+    // order details or customer data. This does not process any payment.
+    if (req.query.check === 'webhook_inbox') {
+      if (process.env.VERCEL_ENV !== 'preview') {
+        return res.status(403).json({ error: 'Somente Preview.' });
+      }
+      const { data, error } = await adminDatabase()
+        .from('pulsar_mp_test_webhook_inbox')
+        .select('process_status,received_at')
+        .order('received_at', { ascending: false })
+        .limit(100);
+      if (error) return res.status(503).json({ error: 'Fila de notificações indisponível.' });
+      const rows = data || [];
+      return res.status(200).json({
+        checked: true,
+        recentCount: rows.length,
+        queuedCount: rows.filter(row => row.process_status === 'queued').length,
+        latestReceivedAt: rows[0]?.received_at || null,
+        limitedToLatest: 100,
+        message: rows.length
+          ? 'Notificações assinadas registradas na fila de teste; nenhum pedido foi aprovado por esta consulta.'
+          : 'Nenhuma notificação de pagamento chegou à fila de teste ainda.'
+      });
+    }
+
     // Read-only checkout readiness diagnostics. Reuse the existing admin
     // endpoint instead of adding another Vercel function.
     if (req.query.check === 'checkout') {

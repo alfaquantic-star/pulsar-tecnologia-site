@@ -219,6 +219,14 @@ export const AdminPanel: React.FC = () => {
     };
     message: string;
   } | null>(null);
+  const [isCheckingWebhookInbox, setIsCheckingWebhookInbox] = useState(false);
+  const [webhookInbox, setWebhookInbox] = useState<{
+    checked: boolean;
+    recentCount: number;
+    queuedCount: number;
+    latestReceivedAt: string | null;
+    message: string;
+  } | null>(null);
   const [checkoutReadiness, setCheckoutReadiness] = useState<{
     readyForPayments: boolean;
     checks: Record<string, boolean>;
@@ -602,6 +610,36 @@ export const AdminPanel: React.FC = () => {
     } catch {
       setWebhookProbe({ success:false, error:'Falha de conexão com o autoteste interno.' });
     } finally { setIsProbingWebhook(false); }
+  };
+
+  const handleCheckWebhookInbox = async () => {
+    setIsCheckingWebhookInbox(true);
+    setWebhookInbox(null);
+    try {
+      const { getSupabaseClient } = await import('../lib/supabase');
+      const client = getSupabaseClient();
+      const { data: { session } } = client
+        ? await client.auth.getSession()
+        : { data: { session: null } };
+      if (!session?.access_token) {
+        showToast('Entre novamente como administrador.', 'error');
+        return;
+      }
+      const response = await fetch('/api/admin/me?check=webhook_inbox', {
+        headers: { Authorization: 'Bearer ' + session.access_token },
+        cache: 'no-store'
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        showToast(result.error || 'Fila de webhook indisponível.', 'error');
+        return;
+      }
+      setWebhookInbox(result);
+    } catch {
+      showToast('Falha ao consultar a fila de notificações.', 'error');
+    } finally {
+      setIsCheckingWebhookInbox(false);
+    }
   };
 
   const handleCheckWebhookDiagnostics = async () => {
@@ -2152,6 +2190,19 @@ export const AdminPanel: React.FC = () => {
                   className="rounded-xl border border-emerald-400/40 bg-emerald-500/15 p-3 text-xs text-emerald-200 font-bold disabled:opacity-50">
                   {isProbingWebhook ? 'Testando...' : 'Executar autoteste interno (sem pagamento)'}
                 </button>
+                <button type="button" onClick={handleCheckWebhookInbox} disabled={isCheckingWebhookInbox}
+                  className="rounded-xl border border-cyan-400/40 bg-cyan-500/15 p-3 text-xs text-cyan-200 font-bold disabled:opacity-50">
+                  {isCheckingWebhookInbox ? 'Consultando fila...' : 'Verificar fila de pagamentos de TESTE'}
+                </button>
+                {webhookInbox && (
+                  <div className="rounded-lg border border-cyan-500/30 p-3 text-xs text-slate-200 space-y-1">
+                    <p>{webhookInbox.message}</p>
+                    <p>Notificações recentes: {webhookInbox.recentCount}</p>
+                    <p>Aguardando processamento: {webhookInbox.queuedCount}</p>
+                    <p>Última chegada: {webhookInbox.latestReceivedAt || 'Nenhuma'}</p>
+                    <p className="text-amber-200">Esta consulta não confirma nem aprova pagamentos.</p>
+                  </div>
+                )}
                 {webhookProbe && (
                   <div className="text-xs space-y-1">
                     <p className={webhookProbe.success ? 'text-emerald-300' : 'text-amber-300'}>
