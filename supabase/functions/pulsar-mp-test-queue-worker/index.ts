@@ -72,20 +72,28 @@ Deno.serve(async request => {
     if (!response.ok) throw new Error('database_update_unavailable');
     return response.json();
   };
-  let claimed: { id: number; resource_id: string; attempts: number } | null = null;
+  let claimed: { id: number; resource_id: string; attempts: number; claim_token: string } | null = null;
   try {
+    // Recover only claims whose processing lease expired. Active workers use a
+    // different token and cannot release or complete somebody else's claim.
+    const expired = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    await update('pulsar_mp_test_webhook_inbox',
+      'process_status=eq.processing&claimed_at=lt.' + encodeURIComponent(expired),
+      { process_status: 'queued', claimed_at: null, claim_token: null });
     const list = await read('pulsar_mp_test_webhook_inbox?process_status=eq.queued&event_type=eq.payment&order=received_at.asc&limit=1&select=id,resource_id,attempts');
     if (!list.length) return json({ checked: true, result: 'queue_empty' });
     const row = list[0];
     if (!/^\d{1,24}$/.test(String(row.resource_id)) ||
         !Number.isInteger(row.attempts) || row.attempts < 0) return json({ error: 'invalid_queued_row' }, 503);
     // Conditional atomic claim. Concurrent workers cannot claim the same event.
+    const claimToken = crypto.randomUUID();
     const claimedRows = await update('pulsar_mp_test_webhook_inbox',
-      'id=eq.' + row.id + '&process_status=eq.queued&select=id,resource_id,attempts',
+      'id=eq.' + row.id + '&process_status=eq.queued&select=id,resource_id,attempts,claim_token',
       { process_status: 'processing', claimed_at: new Date().toISOString(),
-        attempts: row.attempts + 1 });
+        claim_token: claimToken, attempts: row.attempts + 1 });
     if (!claimedRows.length) return json({ checked: true, result: 'already_claimed' });
     claimed = claimedRows[0];
+    if (claimed.claim_token !== claimToken) throw new Error('claim_lost');
     const paymentId = String(claimed.resource_id);
     const upstreamHeaders = { Authorization: 'Bearer ' + token, Accept: 'application/json' };
     const mpGet = async (path: string) => {
@@ -109,8 +117,8 @@ Deno.serve(async request => {
     if (typeof reference !== 'string' || !/^PLS-[A-F0-9]{24}$/.test(reference) ||
         !/^\d{1,24}$/.test(merchantId)) {
       await update('pulsar_mp_test_webhook_inbox',
-        'id=eq.' + claimed.id + '&process_status=eq.processing',
-        { process_status: 'rejected', claimed_at: null });
+        'id=eq.' + claimed.id + '&process_status=eq.processing&claim_token=eq.' + claimed.claim_token,
+        { process_status: 'rejected', claimed_at: null, claim_token: null });
       return json({ checked: true, result: 'invalid_reference' });
     }
     const orders = await read('orders?order_number=eq.' +
@@ -123,15 +131,15 @@ Deno.serve(async request => {
     });
     if (outcome === 'not_approved') {
       await update('pulsar_mp_test_webhook_inbox',
-        'id=eq.' + claimed.id + '&process_status=eq.processing',
+        'id=eq.' + claimed.id + '&process_status=eq.processing&claim_token=eq.' + claimed.claim_token,
         { process_status: claimed.attempts >= 5 ? 'needs_review' : 'queued',
-          claimed_at: null });
+          claimed_at: null, claim_token: null });
       return json({ checked: true, result: 'not_approved' });
     }
     if (outcome === 'invalid') {
       await update('pulsar_mp_test_webhook_inbox',
-        'id=eq.' + claimed.id + '&process_status=eq.processing',
-        { process_status: 'rejected', claimed_at: null });
+        'id=eq.' + claimed.id + '&process_status=eq.processing&claim_token=eq.' + claimed.claim_token,
+        { process_status: 'rejected', claimed_at: null, claim_token: null });
       return json({ checked: true, result: 'verification_rejected' });
     }
     let orderUpdated = false;
@@ -152,9 +160,10 @@ Deno.serve(async request => {
           throw new Error('concurrent_order_conflict');
       }
     }
-    await update('pulsar_mp_test_webhook_inbox',
-      'id=eq.' + claimed.id + '&process_status=eq.processing',
-      { process_status: 'processed', claimed_at: null });
+    const finished = await update('pulsar_mp_test_webhook_inbox',
+      'id=eq.' + claimed.id + '&process_status=eq.processing&claim_token=eq.' + claimed.claim_token,
+      { process_status: 'processed', claimed_at: null, claim_token: null });
+    if (finished.length !== 1) throw new Error('claim_lost');
     return json({ checked: true, result: 'processed', orderUpdated });
   } catch {
     // A timed-out external operation cannot be assumed to have failed.
@@ -162,9 +171,9 @@ Deno.serve(async request => {
     if (claimed) {
       try {
         await update('pulsar_mp_test_webhook_inbox',
-          'id=eq.' + claimed.id + '&process_status=eq.processing',
+          'id=eq.' + claimed.id + '&process_status=eq.processing&claim_token=eq.' + claimed.claim_token,
           { process_status: claimed.attempts >= 5 ? 'needs_review' : 'queued',
-            claimed_at: null });
+            claimed_at: null, claim_token: null });
       } catch { /* stale leases require operational review */ }
     }
     return json({ error: 'retryable_processing_failure' }, 503);
