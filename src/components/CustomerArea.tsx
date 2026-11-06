@@ -71,7 +71,7 @@ export const CustomerArea: React.FC = () => {
     );
   }
 
-  // Filter orders strictly for the current customer (isolamento entre contas)
+  // This local profile is NOT authenticated. Do not fetch orders using its email.\n  // Server-side identity verification is required before enabling customer order history.\n  // Filter only already-local ephemeral orders shown to this browser.
   const myOrders = orders.filter(
     (o) => o.customerId === currentUser.id || o.customerEmail.toLowerCase() === currentUser.email.toLowerCase()
   );
@@ -113,8 +113,8 @@ export const CustomerArea: React.FC = () => {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl sm:text-2xl font-black text-white">{currentUser.fullName}</h1>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30">
-                Cliente Verificado
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
+                Cadastro local — não verificado
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">{currentUser.email} • {currentUser.whatsapp}</p>
