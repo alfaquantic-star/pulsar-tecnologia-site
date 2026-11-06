@@ -11,7 +11,6 @@ import {
   ShoppingBag, 
   ArrowRight,
   Phone,
-  CreditCard,
   CheckCircle2,
   AlertCircle
 } from 'lucide-react';
@@ -33,7 +32,6 @@ export const AuthModal: React.FC = () => {
   const [customerEmail, setCustomerEmail] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerWhatsapp, setCustomerWhatsapp] = useState('');
-  const [customerCpf, setCustomerCpf] = useState('');
   const [isNewCustomer, setIsNewCustomer] = useState(false);
 
   // Admin form fields
@@ -52,7 +50,7 @@ export const AuthModal: React.FC = () => {
       email: customerEmail,
       fullName: customerName,
       whatsapp: customerWhatsapp,
-      cpf: customerCpf
+      cpf: ''
     });
   };
 
@@ -134,12 +132,14 @@ export const AuthModal: React.FC = () => {
               </h3>
               <p className="text-xs text-slate-400 mt-1">
                 {isNewCustomer 
-                  ? 'Cadastre-se para comprar placas personalizadas e acompanhar entregas'
-                  : 'Acompanhe seus pedidos, códigos de rastreio e dados de entrega'}
+                  ? 'Cadastro local de demonstração, sem verificação de e-mail e sem acesso aos pedidos do servidor.'
+                  : 'Cadastro local de demonstração. O acesso aos pedidos exige autenticação de identidade.'}
               </p>
             </div>
 
-            <form onSubmit={handleCustomerSubmit} className="space-y-3.5 text-xs">
+            <div role="status" className="rounded-xl bg-amber-500/10 border border-amber-400/30 px-3 py-2 text-xs text-amber-200">A identidade de clientes ainda não é verificada. Não use este cadastro para consultar pedidos ou informar dados pessoais sensíveis.</div>
+
+             <form onSubmit={handleCustomerSubmit} className="space-y-3.5 text-xs">
               <div>
                 <label className="text-slate-300 font-bold block mb-1.5">
                   E-mail: *
@@ -193,21 +193,7 @@ export const AuthModal: React.FC = () => {
                       </div>
                     </div>
 
-                    <div>
-                      <label className="text-slate-300 font-bold block mb-1.5">
-                        CPF (Nota Fiscal):
-                      </label>
-                      <div className="relative">
-                        <input
-                          type="text"
-                          placeholder="000.000.000-00"
-                          value={customerCpf}
-                          onChange={(e) => setCustomerCpf(e.target.value)}
-                          className="w-full bg-[#181820] text-white pl-10 pr-3 py-2.5 rounded-xl border border-white/10 text-xs"
-                        />
-                        <CreditCard className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-                      </div>
-                    </div>
+
                   </div>
                 </>
               )}
@@ -216,7 +202,7 @@ export const AuthModal: React.FC = () => {
                 type="submit"
                 className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-[#FF5500] to-[#FFAA00] text-black font-extrabold text-sm shadow-xl shadow-[#FF5500]/25 hover:scale-[1.01] active:scale-98 transition flex items-center justify-center gap-2 mt-2"
               >
-                <span>{isNewCustomer ? 'Concluir Cadastro & Entrar' : 'Entrar na Minha Conta'}</span>
+                <span>{isNewCustomer ? 'Salvar cadastro local' : 'Continuar em demonstração'}</span>
                 <ArrowRight className="w-4 h-4 text-black" />
               </button>
 
