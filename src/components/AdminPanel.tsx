@@ -636,6 +636,7 @@ export const AdminPanel: React.FC = () => {
       const result = await response.json().catch(() => ({}));
       setQueuedPaymentVerification({
         ...result,
+        message: result.message || result.error || (result.code === 'server_auth_provider_error' ? 'Erro interno de verificação. Verifique os logs da Vercel.' : `Verificação indisponível (HTTP ${response.status}).`),
         verified: response.ok && result.verified === true
       });
     } catch {
