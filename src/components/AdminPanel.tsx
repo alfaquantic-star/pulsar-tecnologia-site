@@ -2101,10 +2101,10 @@ export const AdminPanel: React.FC = () => {
 
               <div className="rounded-2xl border border-amber-500/25 bg-amber-950/15 p-4 space-y-3">
                 <p className="font-extrabold text-sm text-white">Diagnóstico seguro do Webhook Mercado Pago</p>
-                <p className="text-xs text-slate-400">Mostra somente presença de campos da última rejeição em Preview, sem revelar assinatura, credenciais ou dados do comprador.</p>
+                <p className="text-xs text-slate-400">Mostra apenas se uma tentativa POST chegou ao webhook em Preview e quais campos estavam presentes, sem revelar segredos.</p>
                 <button type="button" onClick={handleCheckWebhookDiagnostics} disabled={isCheckingWebhook}
                   className="rounded-xl border border-amber-400/40 bg-amber-500/15 p-3 text-xs text-amber-200 font-bold disabled:opacity-50">
-                  {isCheckingWebhook ? 'Consultando...' : 'Verificar última notificação rejeitada'}
+                  {isCheckingWebhook ? 'Consultando...' : 'Verificar última tentativa recebida'}
                 </button>
                 {webhookDiagnostics && (
                   <div className="text-xs space-y-2">
