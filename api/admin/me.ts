@@ -20,9 +20,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(403).json({ error: 'Somente Preview' });
       }
       const secret = process.env.MP_WEBHOOK_SECRET?.trim();
-      const hostname = process.env.VERCEL_URL?.trim();
-      if (!secret || !hostname || !/^[a-z0-9.-]+\\.vercel\\.app$/.test(hostname)) {
-        return res.status(503).json({ error: 'Assinatura ou URL do Preview ausente' });
+      // VERCEL_URL can be absent if automatic system env vars are disabled.
+      // Only use a pinned, known Preview domain; never trust a request Host header.
+      const previewHost = 'pulsar-tecnologia-site-git-security-server-api-phase1-qr-flow.vercel.app';
+      const candidate = process.env.VERCEL_URL?.trim() || process.env.VERCEL_BRANCH_URL?.trim() || '';
+      const hostname = /^[a-z0-9.-]+\.vercel\.app$/.test(candidate)
+        ? candidate
+        : previewHost;
+      if (!secret) {
+        return res.status(503).json({
+          error: 'MP_WEBHOOK_SECRET ausente neste deployment Preview.',
+          secretConfigured: false,
+          previewUrlConfigured: Boolean(candidate)
+        });
       }
       const requestId = 'internal-probe-' + randomUUID();
       const timestamp = String(Math.floor(Date.now() / 1000));
