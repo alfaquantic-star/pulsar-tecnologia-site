@@ -584,7 +584,7 @@ export const AdminPanel: React.FC = () => {
         showToast('Entre novamente como administrador.', 'error');
         return;
       }
-      const response = await fetch('/api/admin/webhook-probe', {
+      const response = await fetch('/api/admin/me?check=webhook_probe', {
         method: 'POST',
         headers: { Authorization: 'Bearer ' + session.access_token },
         cache: 'no-store'
