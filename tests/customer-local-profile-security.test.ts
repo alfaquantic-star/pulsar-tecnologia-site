@@ -4,14 +4,16 @@ import { readFileSync } from 'node:fs';
 
 const read = path => readFileSync(new URL('../' + path, import.meta.url), 'utf8');
 
-test('email-only local customer profile cannot claim verified identity', () => {
+test('legacy unverified customer label is gone and account requires email verification', () => {
   const area = read('src/components/CustomerArea.tsx');
   const modal = read('src/components/AuthModal.tsx');
   const store = read('src/context/StoreContext.tsx');
 
   assert.doesNotMatch(area, /Cliente Verificado/);
   assert.match(area, /Cadastro local — não verificado/);
-  assert.match(modal, /A identidade de clientes ainda não é verificada/);
+  assert.match(modal, /Confirme seu endereço de e-mail/);
+  assert.match(modal, /verifyCustomerOtp/);
+  assert.match(store, /auth\.verifyOtp\(/);
   assert.doesNotMatch(modal, /CPF \(Nota Fiscal\)|setCustomerCpf|customerCpf/);
   assert.doesNotMatch(store, /Conta de cliente criada com sucesso/);
 });
