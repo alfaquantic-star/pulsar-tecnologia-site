@@ -19,34 +19,41 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const rawId = req.query['data.id'] ?? req.query['data_id'];
   const queryDataId = typeof rawId === 'string' ? rawId.trim().toLowerCase() : '';
   const bodyId = req.body?.data?.id;
-  if (!validateMercadoPagoSignature({
+  const signatureVerified = validateMercadoPagoSignature({
     signature: req.headers['x-signature'],
     requestId: req.headers['x-request-id'],
     dataId: queryDataId
-  }, secret)) {
-    // Preview-only single-row diagnostics. Persist only presence booleans,
-    // never secrets, signatures, resource IDs, request IDs or the raw body.
-    if (process.env.VERCEL_ENV === 'preview') {
-      try {
-        const { adminDatabase } = await import('../_lib/admin-auth.js');
-        const signatureHeader = req.headers['x-signature'];
-        const signatureFormatValid = typeof signatureHeader === 'string' &&
-          /(?:^|,)\\s*ts=\\d{10,13}(?:,|$)/.test(signatureHeader) &&
-          /(?:^|,)\\s*v1=[a-fA-F0-9]{64}(?:,|$)/.test(signatureHeader);
-        await adminDatabase().from('pulsar_webhook_diagnostics').upsert({
-          id: 'mp_preview',
-          last_attempt_at: new Date().toISOString(),
-          signature_header_present: typeof signatureHeader === 'string',
-          request_id_header_present: typeof req.headers['x-request-id'] === 'string',
-          query_data_id_present: Boolean(queryDataId),
-          body_data_id_present: bodyId != null,
-          signature_format_valid: signatureFormatValid,
-          signature_verified: false
-        }, { onConflict: 'id' }).abortSignal(AbortSignal.timeout(2500));
-      } catch {
-        // Diagnostics can never weaken signature validation or change payment state.
+  }, secret);
+
+  // Persist a minimal record for EVERY Preview POST (valid or rejected).
+  // Otherwise an empty dashboard cannot distinguish successful deliveries
+  // from failed auth or broken diagnostic writes. Never store identifiers,
+  // request bodies, signatures, tokens, IP addresses or customer data.
+  if (process.env.VERCEL_ENV === 'preview') {
+    try {
+      const { adminDatabase } = await import('../_lib/admin-auth.js');
+      const signatureHeader = req.headers['x-signature'];
+      const formatValid = typeof signatureHeader === 'string' &&
+        /(?:^|,)\s*ts=\d{10,13}(?:,|$)/.test(signatureHeader) &&
+        /(?:^|,)\s*v1=[a-fA-F0-9]{64}(?:,|$)/.test(signatureHeader);
+      const result = await adminDatabase().from('pulsar_webhook_diagnostics').upsert({
+        id: 'mp_preview',
+        last_attempt_at: new Date().toISOString(),
+        signature_header_present: typeof signatureHeader === 'string',
+        request_id_header_present: typeof req.headers['x-request-id'] === 'string',
+        query_data_id_present: Boolean(queryDataId),
+        body_data_id_present: bodyId != null,
+        signature_format_valid: formatValid,
+        signature_verified: signatureVerified
+      }, { onConflict: 'id' });
+      if (result.error) {
+        console.error('Mercado Pago diagnostic write failed', result.error.code);
       }
+    } catch {
+      console.error('Mercado Pago diagnostic write failed unexpectedly');
     }
+  }
+  if (!signatureVerified) {
     // Only log presence booleans: never log HMAC, secret, headers or customer data.
     console.warn('Mercado Pago webhook signature rejected', {
       hasSignature: typeof req.headers['x-signature'] === 'string',
