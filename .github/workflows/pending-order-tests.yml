@@ -39,6 +39,7 @@ jobs:
           bunx esbuild api/mercadopago/webhook.ts --bundle --platform=node --format=esm --packages=external --outfile=/tmp/webhook.mjs
           bunx esbuild api/admin/me.ts --bundle --platform=node --format=esm --packages=external --outfile=/tmp/admin-me.mjs
           bunx esbuild supabase/functions/pulsar-mp-test-ingress/index.ts --bundle --platform=browser --format=esm --outfile=/tmp/mp-test-ingress.mjs
+          bunx esbuild supabase/functions/pulsar-mp-test-queue-worker/index.ts --bundle --platform=browser --format=esm --outfile=/tmp/mp-test-queue-worker.mjs
 
 
   rls-cutover-sandbox:
