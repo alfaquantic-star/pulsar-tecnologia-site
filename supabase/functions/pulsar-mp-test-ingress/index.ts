@@ -46,8 +46,8 @@ Deno.serve(async request => {
     console.warn('pulsar_test_webhook_signature_rejected', {
       signaturePresent: Boolean(signatureHeader),
       signatureShapeValid: Boolean(signatureHeader &&
-        /(?:^|,)\\s*ts=\\d{10,13}(?:,|$)/.test(signatureHeader) &&
-        /(?:^|,)\\s*v1=[a-fA-F0-9]{64}(?:,|$)/.test(signatureHeader)),
+        /(?:^|,)\s*ts=\d{10,13}(?:,|$)/.test(signatureHeader) &&
+        /(?:^|,)\s*v1=[a-fA-F0-9]{64}(?:,|$)/.test(signatureHeader)),
       requestIdPresent: Boolean(request.headers.get('x-request-id')),
       queryIdPresent: Boolean(idQuery),
       bodyIdPresent: Boolean(idBody)
