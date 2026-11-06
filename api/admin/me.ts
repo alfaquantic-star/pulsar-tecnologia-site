@@ -154,8 +154,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const sellerId = process.env.PULSAR_MP_TEST_SELLER_ID;
       const buyerId = process.env.PULSAR_MP_TEST_BUYER_ID;
       if (process.env.PULSAR_ENABLE_MP_TEST_CHECKOUT !== 'true' ||
-          !token || !/^\\d{6,24}$/.test(sellerId || '') ||
-          !/^\\d{6,24}$/.test(buyerId || '')) {
+          !token || !/^\d{6,24}$/.test(sellerId || '') ||
+          !/^\d{6,24}$/.test(buyerId || '')) {
         return res.status(503).json({ error: 'Ambiente de pagamento de teste incompleto.' });
       }
       const db = adminDatabase();
@@ -171,7 +171,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         message: 'Nenhuma notificação pendente para verificar.'
       });
       const id = String(queued[0].resource_id);
-      if (queued[0].event_type !== 'payment' || !/^\\d{1,24}$/.test(id)) {
+      if (queued[0].event_type !== 'payment' || !/^\d{1,24}$/.test(id)) {
         return res.status(200).json({ checked:true, verified:false,
           reason:'invalid_queued_event', message:'Evento inválido; nenhum pedido alterado.' });
       }
@@ -192,7 +192,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const reference = typeof payment.external_reference === 'string'
         ? payment.external_reference : '';
       if (!/^PLS-[0-9A-F]{24}$/.test(reference) ||
-          !/^\\d{1,24}$/.test(String(payment.order?.id ?? ''))) {
+          !/^\d{1,24}$/.test(String(payment.order?.id ?? ''))) {
         return res.status(200).json({
           checked:true, verified:false, reason:'invalid_payment_reference',
           message:'Pagamento sem vínculo verificável; nenhum pedido alterado.'
