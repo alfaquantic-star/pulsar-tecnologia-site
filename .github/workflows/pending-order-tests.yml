@@ -2,7 +2,7 @@ name: Checkout Safety and Build Tests
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, security/server-api-phase1]
   push:
     branches: [security/server-api-phase1]
   workflow_dispatch:
