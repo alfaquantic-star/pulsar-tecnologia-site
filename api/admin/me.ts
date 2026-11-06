@@ -1,10 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { verifyAdminIdentity, adminDatabase } from '../_lib/admin-auth.js';
 import { createHmac, randomUUID } from 'node:crypto';
+import { verifyQueuedTestPayment } from '../_lib/mp-queue-payment-verification.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Cache-Control', 'no-store');
-  if (!(req.method === 'GET' || (req.method === 'POST' && req.query.check === 'webhook_probe'))) {
+  if (!(req.method === 'GET' || (req.method === 'POST' && ['webhook_probe', 'webhook_queue_verify'].includes(String(req.query.check))))) {
     res.setHeader('Allow', 'GET, POST');
     return res.status(405).json({ code: 'method_not_allowed' });
   }
@@ -140,6 +141,84 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         message: data
           ? 'Última tentativa POST recebida pelo webhook. Nenhuma credencial é exibida.'
           : 'Nenhuma tentativa POST registrada nesta versão; verifique a URL de destino e a entrega da notificação.'
+      });
+    }
+
+    // Read-only verification of ONE queued event against Mercado Pago test
+    // credentials. No updates to orders or queue; simulated IDs fail closed.
+    if (req.query.check === 'webhook_queue_verify' && req.method === 'POST') {
+      if (process.env.VERCEL_ENV !== 'preview') {
+        return res.status(403).json({ error: 'Somente Preview.' });
+      }
+      const token = process.env.MERCADO_PAGO_TEST_ACCESS_TOKEN?.trim();
+      const sellerId = process.env.PULSAR_MP_TEST_SELLER_ID;
+      const buyerId = process.env.PULSAR_MP_TEST_BUYER_ID;
+      if (process.env.PULSAR_ENABLE_MP_TEST_CHECKOUT !== 'true' ||
+          !token || !/^\\d{6,24}$/.test(sellerId || '') ||
+          !/^\\d{6,24}$/.test(buyerId || '')) {
+        return res.status(503).json({ error: 'Ambiente de pagamento de teste incompleto.' });
+      }
+      const db = adminDatabase();
+      const { data: queued, error: inboxError } = await db
+        .from('pulsar_mp_test_webhook_inbox')
+        .select('resource_id,event_type,process_status')
+        .eq('process_status', 'queued')
+        .order('received_at', { ascending: false })
+        .limit(1);
+      if (inboxError) return res.status(503).json({ error: 'Fila de testes indisponível.' });
+      if (!queued?.length) return res.status(200).json({
+        checked: true, verified: false, reason: 'empty_queue',
+        message: 'Nenhuma notificação pendente para verificar.'
+      });
+      const id = String(queued[0].resource_id);
+      if (queued[0].event_type !== 'payment' || !/^\\d{1,24}$/.test(id)) {
+        return res.status(200).json({ checked:true, verified:false,
+          reason:'invalid_queued_event', message:'Evento inválido; nenhum pedido alterado.' });
+      }
+      const headers = { Authorization: 'Bearer ' + token, Accept: 'application/json' };
+      const getProvider = (url: string) => fetch(url, {
+        headers, cache: 'no-store', signal: AbortSignal.timeout(7000)
+      });
+      const [paymentResponse, sellerResponse] = await Promise.all([
+        getProvider('https://api.mercadopago.com/v1/payments/' + id),
+        getProvider('https://api.mercadolibre.com/users/me')
+      ]);
+      if (!paymentResponse.ok || !sellerResponse.ok) return res.status(200).json({
+        checked:true, verified:false, reason:'provider_not_verified',
+        message:'O Mercado Pago não confirmou o ID da fila; nenhum pedido alterado.'
+      });
+      const payment = await paymentResponse.json();
+      const seller = await sellerResponse.json();
+      const reference = typeof payment.external_reference === 'string'
+        ? payment.external_reference : '';
+      if (!/^PLS-[0-9A-F]{24}$/.test(reference) ||
+          !/^\\d{1,24}$/.test(String(payment.order?.id ?? ''))) {
+        return res.status(200).json({
+          checked:true, verified:false, reason:'invalid_payment_reference',
+          message:'Pagamento sem vínculo verificável; nenhum pedido alterado.'
+        });
+      }
+      const found = await db.from('orders')
+        .select('order_number,total_amount,payment_status,mercado_pago_preference_id,mercado_pago_payment_id')
+        .eq('order_number',reference).maybeSingle();
+      if (found.error) return res.status(503).json({ error:'Falha ao consultar pedido.' });
+      const merchantResponse = await getProvider(
+        'https://api.mercadopago.com/merchant_orders/' + String(payment.order.id)
+      );
+      if (!merchantResponse.ok) return res.status(200).json({
+        checked:true, verified:false, reason:'merchant_order_unavailable',
+        message:'Pedido comercial não verificado; nenhum pedido alterado.'
+      });
+      const merchantOrder = await merchantResponse.json();
+      const result = verifyQueuedTestPayment({
+        paymentId:id, payment, seller, merchantOrder, order:found.data,
+        sellerId, buyerId, testToken:token
+      });
+      return res.status(200).json({
+        checked:true, verified:result.verified, reason:result.reason,
+        message:result.verified
+          ? 'Pagamento de teste verificável. Consulta apenas leitura; nenhum pedido alterado.'
+          : 'Notificação não corresponde a um pagamento de teste validado. Nenhum pedido alterado.'
       });
     }
 
