@@ -219,6 +219,11 @@ export const AdminPanel: React.FC = () => {
     };
     message: string;
   } | null>(null);
+  const [isProcessingQueuedPayment, setIsProcessingQueuedPayment] = useState(false);
+  const [queueProcessResult, setQueueProcessResult] = useState<{
+    checked?:boolean; verified?:boolean; orderUpdated?:boolean;
+    alreadyApproved?:boolean; queuedEventCompleted?:boolean; message?:string;
+  } | null>(null);
   const [isVerifyingQueuedPayment, setIsVerifyingQueuedPayment] = useState(false);
   const [queuedPaymentVerification, setQueuedPaymentVerification] = useState<{
     checked?: boolean; verified?: boolean; reason?: string; message?: string;
@@ -614,6 +619,37 @@ export const AdminPanel: React.FC = () => {
     } catch {
       setWebhookProbe({ success:false, error:'Falha de conexão com o autoteste interno.' });
     } finally { setIsProbingWebhook(false); }
+  };
+
+  const handleProcessQueuedPayment = async () => {
+    setIsProcessingQueuedPayment(true);
+    setQueueProcessResult(null);
+    try {
+      const { getSupabaseClient } = await import('../lib/supabase');
+      const client = getSupabaseClient();
+      const { data: { session } } = client
+        ? await client.auth.getSession() : { data: { session: null } };
+      if (!session?.access_token) {
+        showToast('Entre novamente como administrador.', 'error');
+        return;
+      }
+      const response = await fetch('/api/admin/me?check=webhook_queue_process', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + session.access_token },
+        cache: 'no-store'
+      });
+      const result = await response.json().catch(() => ({}));
+      setQueueProcessResult({
+        ...result,
+        message: result.message || result.error || `Falha HTTP ${response.status}.`,
+        verified: response.ok && result.verified === true
+      });
+    } catch {
+      setQueueProcessResult({ checked:false,verified:false,
+        message:'Falha de conexão ao processar evento de teste.' });
+    } finally {
+      setIsProcessingQueuedPayment(false);
+    }
   };
 
   const handleVerifyQueuedPayment = async () => {
@@ -2233,6 +2269,23 @@ export const AdminPanel: React.FC = () => {
                   className="rounded-xl border border-sky-400/40 bg-sky-500/15 p-3 text-xs text-sky-200 font-bold disabled:opacity-50">
                   {isVerifyingQueuedPayment ? 'Conferindo Mercado Pago...' : 'Verificar evento da fila no Mercado Pago (sem aprovar)'}
                 </button>
+                <button type="button" onClick={handleProcessQueuedPayment} disabled={isProcessingQueuedPayment}
+                  className="rounded-xl border border-amber-400/40 bg-amber-500/15 p-3 text-xs text-amber-200 font-bold disabled:opacity-50">
+                  {isProcessingQueuedPayment ? 'Validando e processando...' : 'Processar 1 evento validado de TESTE'}
+                </button>
+                <p className="text-xs text-amber-200">
+                  Somente Preview: pode aprovar um pedido de teste se o Mercado Pago confirmar
+                  vendedor, comprador, valor e preferência. Eventos falsos não aprovam pedidos.
+                </p>
+                {queueProcessResult && (
+                  <div className="rounded-lg border border-amber-500/30 p-3 text-xs text-slate-200 space-y-1">
+                    <p>{queueProcessResult.message || 'Processamento não concluído.'}</p>
+                    <p>Pagamento validado: {queueProcessResult.verified ? 'Sim' : 'Não'}</p>
+                    <p>Pedido atualizado: {queueProcessResult.orderUpdated ? 'Sim' : 'Não'}</p>
+                    <p>Já estava aprovado: {queueProcessResult.alreadyApproved ? 'Sim' : 'Não'}</p>
+                    <p>Evento concluído na fila: {queueProcessResult.queuedEventCompleted ? 'Sim' : 'Não'}</p>
+                  </div>
+                )}
                 {queuedPaymentVerification && (
                   <div className="rounded-lg border border-sky-500/30 p-3 text-xs text-slate-200 space-y-1">
                     <p>{queuedPaymentVerification.message || 'Verificação indisponível.'}</p>
