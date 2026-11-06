@@ -23,16 +23,18 @@ export const AuthModal: React.FC = () => {
     authModalTab,
     setAuthModalTab,
     loginAsAdmin,
-    loginAsCustomer,
+    requestCustomerOtp,
+    verifyCustomerOtp,
     currentUser,
     logout
   } = useStore();
 
-  // Customer form fields
+  // Customers authenticate by proving possession of their email.
   const [customerEmail, setCustomerEmail] = useState('');
-  const [customerName, setCustomerName] = useState('');
-  const [customerWhatsapp, setCustomerWhatsapp] = useState('');
-  const [isNewCustomer, setIsNewCustomer] = useState(false);
+  const [customerOtp, setCustomerOtp] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [customerBusy, setCustomerBusy] = useState(false);
+  const [customerError, setCustomerError] = useState('');
 
   // Admin form fields
   const [adminEmail, setAdminEmail] = useState('');
@@ -43,15 +45,23 @@ export const AuthModal: React.FC = () => {
 
   if (!isAuthModalOpen) return null;
 
-  const handleCustomerSubmit = (e: React.FormEvent) => {
+  const handleCustomerSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!customerEmail) return;
-    loginAsCustomer({
-      email: customerEmail,
-      fullName: customerName,
-      whatsapp: customerWhatsapp,
-      cpf: ''
-    });
+    if (customerBusy) return;
+    setCustomerBusy(true);
+    setCustomerError('');
+    try {
+      if (!otpSent) {
+        const ok = await requestCustomerOtp(customerEmail);
+        if (ok) setOtpSent(true);
+        else setCustomerError('Não foi possível enviar o código. Confira o e-mail ou tente novamente.');
+      } else {
+        const ok = await verifyCustomerOtp(customerEmail, customerOtp);
+        if (!ok) setCustomerError('Código inválido ou expirado. Confira o e-mail e tente novamente.');
+      }
+    } finally {
+      setCustomerBusy(false);
+    }
   };
 
   const handleAdminSubmit = async (e: React.FormEvent) => {
@@ -120,103 +130,52 @@ export const AuthModal: React.FC = () => {
           </button>
         </div>
 
-        {/* TAB 1: CUSTOMER LOGIN / REGISTER */}
+        {/* TAB 1: CUSTOMER EMAIL OTP */}
         {authModalTab === 'customer' && (
           <div className="space-y-5 animate-in fade-in duration-150">
             <div>
               <div className="w-12 h-12 rounded-2xl bg-[#FF5500]/15 border border-[#FF5500]/30 flex items-center justify-center text-[#FFAA00] mb-3">
-                <User className="w-6 h-6" />
+                <Mail className="w-6 h-6" />
               </div>
-              <h3 className="text-xl font-black text-white">
-                {isNewCustomer ? 'Criar Cadastro de Cliente' : 'Acesse sua Conta de Cliente'}
-              </h3>
+              <h3 className="text-xl font-black text-white">Entrar na Conta de Cliente</h3>
               <p className="text-xs text-slate-400 mt-1">
-                {isNewCustomer 
-                  ? 'Cadastro local de demonstração, sem verificação de e-mail e sem acesso aos pedidos do servidor.'
-                  : 'Cadastro local de demonstração. O acesso aos pedidos exige autenticação de identidade.'}
+                Confirme seu endereço de e-mail para entrar com segurança.
+                O histórico de pedidos ficará disponível após vinculá-los à conta verificada.
               </p>
             </div>
-
-            <div role="status" className="rounded-xl bg-amber-500/10 border border-amber-400/30 px-3 py-2 text-xs text-amber-200">A identidade de clientes ainda não é verificada. Não use este cadastro para consultar pedidos ou informar dados pessoais sensíveis.</div>
-
-             <form onSubmit={handleCustomerSubmit} className="space-y-3.5 text-xs">
-              <div>
-                <label className="text-slate-300 font-bold block mb-1.5">
-                  E-mail: *
+            {customerError && (
+              <div role="alert" className="p-3 rounded-xl border border-red-500/50 text-red-200 text-xs">{customerError}</div>
+            )}
+            <form onSubmit={handleCustomerSubmit} className="space-y-3.5 text-xs">
+              <label className="text-slate-300 font-bold block">E-mail
+                <input type="email" required disabled={otpSent || customerBusy}
+                  value={customerEmail} onChange={e => setCustomerEmail(e.target.value)}
+                  autoComplete="email" placeholder="seuemail@exemplo.com"
+                  className="mt-2 w-full bg-[#181820] text-white px-3 py-3 rounded-xl border border-white/10 text-sm" />
+              </label>
+              {otpSent && (
+                <label className="text-slate-300 font-bold block">
+                  Código de verificação recebido por e-mail
+                  <input type="text" required inputMode="numeric" pattern="[0-9]{6,8}" maxLength={8}
+                    autoComplete="one-time-code" value={customerOtp}
+                    onChange={e => setCustomerOtp(e.target.value.replace(/\\D/g, ''))}
+                    placeholder="Código de 6 dígitos"
+                    className="mt-2 w-full bg-[#181820] text-white px-3 py-3 rounded-xl border border-white/10 text-sm" />
                 </label>
-                <div className="relative">
-                  <input
-                    type="email"
-                    required
-                    placeholder="seuemail@exemplo.com"
-                    value={customerEmail}
-                    onChange={(e) => setCustomerEmail(e.target.value)}
-                    className="w-full bg-[#181820] text-white pl-10 pr-3 py-3 rounded-xl border border-white/10 focus:outline-none focus:border-[#FF5500] text-sm"
-                  />
-                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-                </div>
-              </div>
-
-              {isNewCustomer && (
-                <>
-                  <div>
-                    <label className="text-slate-300 font-bold block mb-1.5">
-                      Nome Completo: *
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="text"
-                        required
-                        placeholder="Ex: Carlos Silva"
-                        value={customerName}
-                        onChange={(e) => setCustomerName(e.target.value)}
-                        className="w-full bg-[#181820] text-white pl-10 pr-3 py-3 rounded-xl border border-white/10 focus:outline-none focus:border-[#FF5500] text-sm"
-                      />
-                      <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-slate-300 font-bold block mb-1.5">
-                        WhatsApp:
-                      </label>
-                      <div className="relative">
-                        <input
-                          type="tel"
-                          placeholder="(11) 98765-4321"
-                          value={customerWhatsapp}
-                          onChange={(e) => setCustomerWhatsapp(e.target.value)}
-                          className="w-full bg-[#181820] text-white pl-10 pr-3 py-2.5 rounded-xl border border-white/10 text-xs"
-                        />
-                        <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-                      </div>
-                    </div>
-
-
-                  </div>
-                </>
               )}
-
-              <button
-                type="submit"
-                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-[#FF5500] to-[#FFAA00] text-black font-extrabold text-sm shadow-xl shadow-[#FF5500]/25 hover:scale-[1.01] active:scale-98 transition flex items-center justify-center gap-2 mt-2"
-              >
-                <span>{isNewCustomer ? 'Salvar cadastro local' : 'Continuar em demonstração'}</span>
-                <ArrowRight className="w-4 h-4 text-black" />
+              <button type="submit" disabled={customerBusy}
+                className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-[#FF5500] to-[#FFAA00] text-black font-extrabold text-sm disabled:opacity-50">
+                {customerBusy ? 'Verificando...' : otpSent ? 'Confirmar código e entrar' : 'Enviar código por e-mail'}
               </button>
-
-              <div className="pt-2 text-center">
-                <button
-                  type="button"
-                  onClick={() => setIsNewCustomer(!isNewCustomer)}
-                  className="text-xs text-[#FFAA00] hover:underline font-semibold"
-                >
-                  {isNewCustomer
-                    ? 'Já possui uma conta? Clique para fazer login'
-                    : 'Primeira vez aqui? Clique para criar uma conta de cliente'}
-                </button>
-              </div>
+              {otpSent && <button type="button" onClick={() => {
+                setOtpSent(false); setCustomerOtp(''); setCustomerError('');
+              }} className="text-xs text-[#FFAA00] hover:underline">
+                Alterar e-mail ou solicitar outro código
+              </button>}
+              <p className="text-slate-400 text-xs">
+                Se o e-mail contiver apenas um link em vez do código, será necessário
+                configurar o modelo OTP no Supabase Auth antes de usar este formulário.
+              </p>
             </form>
           </div>
         )}
