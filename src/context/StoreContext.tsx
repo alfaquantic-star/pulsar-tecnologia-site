@@ -715,7 +715,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     if (existing) {
       setCurrentUser(existing);
       setIsAuthModalOpen(false);
-      showToast(`Bem-vindo de volta, ${existing.fullName}!`, 'success');
+      showToast('Cadastro local de demonstração carregado; identidade ainda não verificada.', 'info');
       return true;
     }
     const newUser: CustomerProfile = {
@@ -730,7 +730,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     };
     setCurrentUser(newUser);
     setIsAuthModalOpen(false);
-    showToast(`Conta de cliente criada com sucesso para ${newUser.fullName}!`, 'success');
+    showToast('Cadastro local de demonstração salvo. Acesso aos pedidos requer autenticação verificada.', 'info');
     return true;
   };
 
