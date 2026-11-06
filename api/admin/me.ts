@@ -5,7 +5,7 @@ import { verifyQueuedTestPayment } from '../_lib/mp-queue-payment-verification.j
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Cache-Control', 'no-store');
-  if (!(req.method === 'GET' || (req.method === 'POST' && ['webhook_probe', 'webhook_queue_verify'].includes(String(req.query.check))))) {
+  if (!(req.method === 'GET' || (req.method === 'POST' && ['webhook_probe', 'webhook_queue_verify', 'webhook_queue_process'].includes(String(req.query.check))))) {
     res.setHeader('Allow', 'GET, POST');
     return res.status(405).json({ code: 'method_not_allowed' });
   }
@@ -146,7 +146,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Read-only verification of ONE queued event against Mercado Pago test
     // credentials. No updates to orders or queue; simulated IDs fail closed.
-    if (req.query.check === 'webhook_queue_verify' && req.method === 'POST') {
+    if ((req.query.check === 'webhook_queue_verify' ||
+         req.query.check === 'webhook_queue_process') && req.method === 'POST') {
       if (process.env.VERCEL_ENV !== 'preview') {
         return res.status(403).json({ error: 'Somente Preview.' });
       }
@@ -214,11 +215,66 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         paymentId:id, payment, seller, merchantOrder, order:found.data,
         sellerId, buyerId, testToken:token
       });
+      if (req.query.check === 'webhook_queue_verify' || !result.verified) {
+        return res.status(200).json({
+          checked:true, verified:result.verified, reason:result.reason,
+          orderUpdated:false,
+          message:result.verified
+            ? 'Pagamento de teste verificável. Consulta apenas leitura; nenhum pedido alterado.'
+            : 'Notificação não corresponde a um pagamento de teste validado. Nenhum pedido alterado.'
+        });
+      }
+      // Processing is opt-in, admin-authenticated and Preview-only.
+      // The merchant payment and preference have already been independently
+      // verified. A compare-and-set on pending prevents repeat approvals.
+      if (result.reason === 'eligible_pending') {
+        const changed = await db.from('orders')
+          .update({
+            payment_status:'approved',
+            mercado_pago_payment_id:id,
+            payment_verified_at:new Date().toISOString()
+          })
+          .eq('order_number',reference)
+          .eq('payment_status','pending')
+          .is('mercado_pago_payment_id',null)
+          .eq('total_amount',Number(payment.transaction_amount))
+          .select('id').maybeSingle();
+        if (changed.error) return res.status(503).json({
+          error:'Pedido não pôde ser atualizado com segurança.'
+        });
+        if (!changed.data) {
+          // Another worker may have already confirmed the same payment;
+          // re-read to distinguish harmless repetition from a conflict.
+          const current = await db.from('orders')
+            .select('payment_status,mercado_pago_payment_id')
+            .eq('order_number',reference).maybeSingle();
+          if (current.error || current.data?.payment_status !== 'approved' ||
+              String(current.data?.mercado_pago_payment_id) !== id) {
+            return res.status(409).json({
+              error:'Pedido mudou durante a verificação; a fila não foi marcada como concluída.'
+            });
+          }
+        }
+      }
+      // Mark only the authenticated and provider-verified event completed.
+      // If this write fails, a retry is safe because an already-approved
+      // order is accepted only when it has the identical payment ID.
+      const completed = await db.from('pulsar_mp_test_webhook_inbox')
+        .update({process_status:'processed'})
+        .eq('resource_id',id)
+        .eq('event_type','payment')
+        .eq('process_status','queued')
+        .select('id').maybeSingle();
+      if (completed.error) return res.status(503).json({
+        error:'Pagamento confirmado, mas não foi possível concluir o registro da fila.'
+      });
       return res.status(200).json({
-        checked:true, verified:result.verified, reason:result.reason,
-        message:result.verified
-          ? 'Pagamento de teste verificável. Consulta apenas leitura; nenhum pedido alterado.'
-          : 'Notificação não corresponde a um pagamento de teste validado. Nenhum pedido alterado.'
+        checked:true,verified:true,orderUpdated:result.reason === 'eligible_pending',
+        alreadyApproved:result.reason === 'already_approved',
+        queuedEventCompleted:Boolean(completed.data),
+        message: result.reason === 'already_approved'
+          ? 'Pagamento já aprovado com este mesmo ID; evento da fila concluído com segurança.'
+          : 'Pagamento de teste aprovado após verificação independente; evento da fila concluído.'
       });
     }
 
