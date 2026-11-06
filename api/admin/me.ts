@@ -14,6 +14,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const user = await verifyAdminIdentity(req);
     if (!user) return res.status(403).json({ code: 'not_authorized_admin' });
 
+    // Protected, read-only access to the latest preview webhook signature
+    // rejection. Exposes no identifiers, signatures, tokens or customer data.
+    if (req.query.check === 'webhook') {
+      if (process.env.VERCEL_ENV !== 'preview') {
+        return res.status(403).json({ error: 'Somente Preview.' });
+      }
+      const { data, error } = await adminDatabase()
+        .from('pulsar_webhook_diagnostics')
+        .select('last_attempt_at,signature_header_present,request_id_header_present,query_data_id_present,body_data_id_present,signature_format_valid,signature_verified')
+        .eq('id', 'mp_preview').maybeSingle();
+      if (error) return res.status(503).json({
+        error: 'Diagnóstico indisponível. Verifique a migração de diagnóstico.'
+      });
+      return res.status(200).json({
+        recorded: Boolean(data),
+        diagnostics: data || null,
+        message: data
+          ? 'Última rejeição de assinatura registrada. Nenhuma credencial é exibida.'
+          : 'Nenhuma rejeição de assinatura registrada nesta versão.'
+      });
+    }
+
     // Read-only checkout readiness diagnostics. Reuse the existing admin
     // endpoint instead of adding another Vercel function.
     if (req.query.check === 'checkout') {
