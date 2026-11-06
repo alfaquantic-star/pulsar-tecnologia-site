@@ -1,10 +1,11 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { verifyAdminIdentity, adminDatabase } from '../_lib/admin-auth.js';
+import { createHmac, randomUUID } from 'node:crypto';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Cache-Control', 'no-store');
-  if (req.method !== 'GET') {
-    res.setHeader('Allow', 'GET');
+  if (!(req.method === 'GET' || (req.method === 'POST' && req.query.check === 'webhook_probe'))) {
+    res.setHeader('Allow', 'GET, POST');
     return res.status(405).json({ code: 'method_not_allowed' });
   }
   if (!req.headers.authorization?.startsWith('Bearer ')) {
@@ -13,6 +14,48 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const user = await verifyAdminIdentity(req);
     if (!user) return res.status(403).json({ code: 'not_authorized_admin' });
+
+    if (req.query.check === 'webhook_probe' && req.method === 'POST') {
+      if (process.env.VERCEL_ENV !== 'preview') {
+        return res.status(403).json({ error: 'Somente Preview' });
+      }
+      const secret = process.env.MP_WEBHOOK_SECRET?.trim();
+      const hostname = process.env.VERCEL_URL?.trim();
+      if (!secret || !hostname || !/^[a-z0-9.-]+\\.vercel\\.app$/.test(hostname)) {
+        return res.status(503).json({ error: 'Assinatura ou URL do Preview ausente' });
+      }
+      const requestId = 'internal-probe-' + randomUUID();
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const resourceId = 'diagnostic';
+      const manifest = `id:${resourceId};request-id:${requestId};ts:${timestamp};`;
+      const digest = createHmac('sha256', secret).update(manifest).digest('hex');
+      const response = await fetch('https://' + hostname +
+        '/api/mercadopago/webhook?data.id=diagnostic&type=diagnostic', {
+        method: 'POST', cache: 'no-store',
+        signal: AbortSignal.timeout(10000),
+        headers: { 'Content-Type':'application/json',
+          'x-request-id':requestId, 'x-signature':`ts=${timestamp},v1=${digest}` },
+        body: JSON.stringify({type:'diagnostic',action:'internal.probe',data:{id:resourceId}})
+      });
+      let body: Record<string,unknown> = {};
+      try { body = await response.json(); } catch {}
+      const webhookSignatureAccepted =
+        response.ok && body.received === true && body.ignored === true;
+      const diag = await adminDatabase().from('pulsar_webhook_diagnostics')
+        .select('last_attempt_at,signature_verified')
+        .eq('id', 'mp_preview').maybeSingle();
+      return res.status(200).json({
+        success: webhookSignatureAccepted && !diag.error && diag.data?.signature_verified === true,
+        routeHttpStatus: response.status,
+        webhookSignatureAccepted,
+        databaseDiagnosticRecorded: !diag.error && Boolean(diag.data),
+        databaseDiagnosticSignatureVerified: diag.data?.signature_verified === true,
+        diagnosticDbErrorCode: diag.error?.code || null,
+        message: webhookSignatureAccepted
+          ? 'Webhook interno autenticou uma notificação fictícia sem pagamento.'
+          : 'Falha ao autenticar a notificação fictícia; consulte o HTTP.'
+      });
+    }
 
     // Protected, read-only access to the latest preview webhook signature
     // rejection. Exposes no identifiers, signatures, tokens or customer data.
