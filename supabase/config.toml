@@ -1,0 +1,3 @@
+# Only the dedicated external webhook receiver is public.
+[functions.pulsar-mp-test-ingress]
+verify_jwt = false
