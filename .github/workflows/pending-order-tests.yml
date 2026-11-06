@@ -82,5 +82,5 @@ jobs:
         run: |
           psql --set ON_ERROR_STOP=1 -c "CREATE ROLE service_role NOLOGIN BYPASSRLS;"
           psql --set ON_ERROR_STOP=1 --file supabase/migrations/20261105_prepare_test_webhook_inbox.sql
-          psql --set ON_ERROR_STOP=1 -c "DO \\$\\$ BEGIN IF has_table_privilege('anon','public.pulsar_mp_test_webhook_inbox','SELECT') OR has_table_privilege('authenticated','public.pulsar_mp_test_webhook_inbox','INSERT') OR NOT has_table_privilege('service_role','public.pulsar_mp_test_webhook_inbox','INSERT') THEN RAISE EXCEPTION 'test ingress inbox privileges unsafe'; END IF; END \\$\\$;"
+          psql --set ON_ERROR_STOP=1 -At -c "SELECT NOT has_table_privilege('anon','public.pulsar_mp_test_webhook_inbox','SELECT') AND NOT has_table_privilege('authenticated','public.pulsar_mp_test_webhook_inbox','INSERT') AND has_table_privilege('service_role','public.pulsar_mp_test_webhook_inbox','INSERT');" | grep -qx t
 
