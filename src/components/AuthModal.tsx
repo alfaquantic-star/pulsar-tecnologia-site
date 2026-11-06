@@ -11,7 +11,6 @@ import {
   ShoppingBag, 
   ArrowRight,
   Phone,
-  CreditCard,
   CheckCircle2,
   AlertCircle
 } from 'lucide-react';
@@ -51,7 +50,7 @@ export const AuthModal: React.FC = () => {
       email: customerEmail,
       fullName: customerName,
       whatsapp: customerWhatsapp,
-      cpf: customerCpf
+      cpf: ''
     });
   };
 
@@ -194,21 +193,7 @@ export const AuthModal: React.FC = () => {
                       </div>
                     </div>
 
-                    <div>
-                      <label className="text-slate-300 font-bold block mb-1.5">
-                        CPF (Nota Fiscal):
-                      </label>
-                      <div className="relative">
-                        <input
-                          type="text"
-                          placeholder="000.000.000-00"
-                          value={customerCpf}
-                          onChange={(e) => setCustomerCpf(e.target.value)}
-                          className="w-full bg-[#181820] text-white pl-10 pr-3 py-2.5 rounded-xl border border-white/10 text-xs"
-                        />
-                        <CreditCard className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
-                      </div>
-                    </div>
+
                   </div>
                 </>
               )}
