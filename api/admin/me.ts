@@ -20,18 +20,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(403).json({ error: 'Somente Preview' });
       }
       const secret = process.env.MP_WEBHOOK_SECRET?.trim();
-      // VERCEL_URL can be absent if automatic system env vars are disabled.
-      // Only use a pinned, known Preview domain; never trust a request Host header.
-      const previewHost = 'pulsar-tecnologia-site-git-security-server-api-phase1-qr-flow.vercel.app';
-      const candidate = process.env.VERCEL_URL?.trim() || process.env.VERCEL_BRANCH_URL?.trim() || '';
-      const hostname = /^[a-z0-9.-]+\.vercel\.app$/.test(candidate)
-        ? candidate
-        : previewHost;
+      // Always probe the PUBLIC BRANCH ALIAS which Mercado Pago uses, rather
+      // than a deployment-specific VERCEL_URL that can require authentication.
+      // Never derive a webhook destination from the user-controlled Host header.
+      const hostname = 'pulsar-tecnologia-site-git-security-server-api-phase1-qr-flow.vercel.app';
       if (!secret) {
         return res.status(503).json({
           error: 'MP_WEBHOOK_SECRET ausente neste deployment Preview.',
           secretConfigured: false,
-          previewUrlConfigured: Boolean(candidate)
+          previewUrlConfigured: true
         });
       }
       const requestId = 'internal-probe-' + randomUUID();
@@ -47,8 +44,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           'x-request-id':requestId, 'x-signature':`ts=${timestamp},v1=${digest}` },
         body: JSON.stringify({type:'diagnostic',action:'internal.probe',data:{id:resourceId}})
       });
+      const contentType = response.headers.get('content-type') || '';
+      const vercelAuthRedirect = Boolean(response.headers.get('location')?.includes('vercel.com'));
       let body: Record<string,unknown> = {};
-      try { body = await response.json(); } catch {}
+      try {
+        if (contentType.includes('application/json')) body = await response.json();
+      } catch {}
+      const responseLooksLikeVercelProtection =
+        !contentType.includes('application/json') &&
+        (response.status === 401 || response.status === 403 || vercelAuthRedirect);
       const webhookSignatureAccepted =
         response.ok && body.received === true && body.ignored === true;
       const diag = await adminDatabase().from('pulsar_webhook_diagnostics')
@@ -58,12 +62,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         success: webhookSignatureAccepted && !diag.error && diag.data?.signature_verified === true,
         routeHttpStatus: response.status,
         webhookSignatureAccepted,
+        target: 'public_preview_branch_alias',
+        responseIsJson: contentType.includes('application/json'),
+        possibleVercelProtection: responseLooksLikeVercelProtection,
         databaseDiagnosticRecorded: !diag.error && Boolean(diag.data),
         databaseDiagnosticSignatureVerified: diag.data?.signature_verified === true,
         diagnosticDbErrorCode: diag.error?.code || null,
         message: webhookSignatureAccepted
-          ? 'Webhook interno autenticou uma notificação fictícia sem pagamento.'
-          : 'Falha ao autenticar a notificação fictícia; consulte o HTTP.'
+          ? 'Webhook autenticou a notificação fictícia via URL pública do Preview.'
+          : responseLooksLikeVercelProtection
+            ? 'Possível Vercel Deployment Protection: resposta 401/403 não JSON antes do webhook.'
+            : 'A rota do webhook respondeu, mas não validou o autoteste. Consulte HTTP e diagnóstico.'
       });
     }
 
