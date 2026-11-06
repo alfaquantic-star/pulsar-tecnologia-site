@@ -84,7 +84,8 @@ interface StoreContextType {
   setCurrentUser: (user: CustomerProfile | null) => void;
   login: (email: string, role?: 'customer' | 'admin') => boolean;
   loginAsAdmin: (email: string, pass: string) => Promise<boolean>;
-  loginAsCustomer: (data: { email: string; fullName?: string; whatsapp?: string; cpf?: string }) => boolean;
+  requestCustomerOtp: (email: string) => Promise<boolean>;
+  verifyCustomerOtp: (email: string, token: string) => Promise<boolean>;
   logout: () => void;
   switchUserRole: () => void;
   updateUserProfile: (data: Partial<CustomerProfile>) => void;
@@ -174,14 +175,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   // 6. User Auth State
   // Browser-controlled localStorage cannot grant administrator privileges.
-  const [currentUser, setCurrentUser] = useState<CustomerProfile | null>(() => {
-    const saved = localStorage.getItem('pulsar_user');
-    if (!saved) return null;
-    try {
-      const candidate = JSON.parse(saved) as CustomerProfile;
-      return candidate.role === 'admin' ? null : candidate;
-    } catch { return null; }
-  });
+  const [currentUser, setCurrentUser] = useState<CustomerProfile | null>(null);
 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [authModalTab, setAuthModalTab] = useState<'customer' | 'admin'>('customer');
@@ -300,14 +294,24 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [settings]);
 
   useEffect(() => {
-    // Supabase Auth owns the admin session. Never persist an admin role in
-    // app-controlled storage; it can be edited by any browser user.
-    if (currentUser && currentUser.role !== 'admin') {
-      localStorage.setItem('pulsar_user', JSON.stringify(currentUser));
-    } else {
-      localStorage.removeItem('pulsar_user');
-    }
-  }, [currentUser]);
+    localStorage.removeItem('pulsar_user');
+    const client = getSupabaseClient();
+    if (!client) return;
+    let cancelled = false;
+    const restore = async () => {
+      const { data, error } = await client.auth.getUser();
+      if (cancelled || error || !data.user?.email || data.user.app_metadata?.role === 'admin') return;
+      setCurrentUser({
+        id: data.user.id, email: data.user.email.toLowerCase(),
+        fullName: data.user.email.split('@')[0],
+        cpf: '', whatsapp: '', role: 'customer',
+        createdAt: data.user.created_at, addresses: []
+      });
+      setOrders([]);
+    };
+    void restore();
+    return () => { cancelled = true; };
+  }, []);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
     const id = Math.random().toString(36).substring(2, 9);
@@ -705,48 +709,50 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     }
   };
 
-  const loginAsCustomer = (data: { email: string; fullName?: string; whatsapp?: string; cpf?: string }): boolean => {
-    const emailClean = data.email.trim().toLowerCase();
-    if (!emailClean) {
-      showToast('Por favor, informe seu e-mail de cliente.', 'error');
-      return false;
-    }
-    const existing = INITIAL_CUSTOMERS.find((c) => c.email.toLowerCase() === emailClean && c.role === 'customer');
-    if (existing) {
-      setCurrentUser(existing);
-      setIsAuthModalOpen(false);
-      showToast('Cadastro local de demonstração carregado; identidade ainda não verificada.', 'info');
-      return true;
-    }
-    const newUser: CustomerProfile = {
-      id: 'cust-' + Math.random().toString(36).substring(2, 8),
-      fullName: data.fullName?.trim() || emailClean.split('@')[0],
-      email: emailClean,
-      cpf: data.cpf || '000.000.000-00',
-      whatsapp: data.whatsapp || '(11) 90000-0000',
-      role: 'customer',
-      createdAt: new Date().toISOString(),
-      addresses: []
-    };
-    setCurrentUser(newUser);
-    setIsAuthModalOpen(false);
-    showToast('Cadastro local de demonstração salvo. Acesso aos pedidos requer autenticação verificada.', 'info');
-    return true;
+  // Customer identity requires verified email OTP, never a typed email.
+  const requestCustomerOtp = async (email: string): Promise<boolean> => {
+    const clean = email.trim().toLowerCase();
+    if (!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(clean)) return false;
+    const client = getSupabaseClient();
+    if (!client) return false;
+    try {
+      const { error } = await client.auth.signInWithOtp({ email: clean, options: { shouldCreateUser: true } });
+      return !error;
+    } catch { return false; }
   };
 
-  const login = (email: string, role: 'customer' | 'admin' = 'customer'): boolean => {
-    const cleanEmail = email.trim().toLowerCase();
-    if (role === 'admin') {
-      showToast('Painel admin indisponível até a configuração segura de permissões.', 'error');
-      return false;
-    }
-    return loginAsCustomer({ email: cleanEmail });
+  const verifyCustomerOtp = async (email: string, token: string): Promise<boolean> => {
+    const clean = email.trim().toLowerCase();
+    const client = getSupabaseClient();
+    if (!client || !/^\\d{6,8}$/.test(token.trim())) return false;
+    try {
+      const verified = await client.auth.verifyOtp({ email: clean, token: token.trim(), type: 'email' });
+      if (verified.error || !verified.data.session?.access_token) return false;
+      const { data: identity, error } = await client.auth.getUser();
+      if (error || !identity.user || identity.user.email?.toLowerCase() !== clean ||
+          identity.user.app_metadata?.role === 'admin') {
+        await client.auth.signOut();
+        return false;
+      }
+      setCurrentUser({
+        id: identity.user.id, email: clean, fullName: clean.split('@')[0],
+        cpf: '', whatsapp: '', role: 'customer',
+        createdAt: identity.user.created_at, addresses: []
+      });
+      setOrders([]); // Order ownership mapping is not yet enabled.
+      setIsAuthModalOpen(false);
+      showToast('E-mail confirmado. Conta autenticada.', 'success');
+      return true;
+    } catch { return false; }
+  };
+
+  const login = (_email: string, _role: 'customer' | 'admin' = 'customer'): boolean => {
+    openAuthModal('customer');
+    return false;
   };
 
   const logout = () => {
-    if (currentUser?.role === 'admin') {
-      void getSupabaseClient()?.auth.signOut();
-    }
+    void getSupabaseClient()?.auth.signOut();
     setCurrentUser(null);
     setOrders([]);
     if (currentView === 'admin') {
@@ -960,7 +966,8 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         setCurrentUser,
         login,
         loginAsAdmin,
-        loginAsCustomer,
+        requestCustomerOtp,
+        verifyCustomerOtp,
         logout,
         switchUserRole,
         updateUserProfile,
