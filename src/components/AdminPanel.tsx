@@ -190,6 +190,16 @@ export const AdminPanel: React.FC = () => {
   const [melhorEnvioTestResult, setMelhorEnvioTestResult] = useState<{ success: boolean; message: string; environment?: string; availableOptions?: number } | null>(null);
   const [isCheckingCheckout, setIsCheckingCheckout] = useState(false);
   const [isCheckingWebhook, setIsCheckingWebhook] = useState(false);
+  const [isProbingWebhook, setIsProbingWebhook] = useState(false);
+  const [webhookProbe, setWebhookProbe] = useState<{
+    success?: boolean;
+    routeHttpStatus?: number;
+    webhookSignatureAccepted?: boolean;
+    databaseDiagnosticRecorded?: boolean;
+    databaseDiagnosticSignatureVerified?: boolean;
+    diagnosticDbErrorCode?: string | null;
+    message?: string; error?: string;
+  } | null>(null);
   const [webhookDiagnostics, setWebhookDiagnostics] = useState<{
     recorded: boolean;
     diagnostics: null | {
@@ -560,6 +570,32 @@ export const AdminPanel: React.FC = () => {
     } finally {
       setIsCheckingCheckout(false);
     }
+  };
+
+  const handleWebhookSelfTest = async () => {
+    setIsProbingWebhook(true);
+    setWebhookProbe(null);
+    try {
+      const { getSupabaseClient } = await import('../lib/supabase');
+      const client = getSupabaseClient();
+      const { data: { session } } = client
+        ? await client.auth.getSession() : { data: { session: null } };
+      if (!session?.access_token) {
+        showToast('Entre novamente como administrador.', 'error');
+        return;
+      }
+      const response = await fetch('/api/admin/webhook-probe', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + session.access_token },
+        cache: 'no-store'
+      });
+      const result = await response.json().catch(() => ({}));
+      setWebhookProbe({
+        ...result, success: response.ok && result.success === true
+      });
+    } catch {
+      setWebhookProbe({ success:false, error:'Falha de conexão com o autoteste interno.' });
+    } finally { setIsProbingWebhook(false); }
   };
 
   const handleCheckWebhookDiagnostics = async () => {
@@ -2106,6 +2142,22 @@ export const AdminPanel: React.FC = () => {
                   className="rounded-xl border border-amber-400/40 bg-amber-500/15 p-3 text-xs text-amber-200 font-bold disabled:opacity-50">
                   {isCheckingWebhook ? 'Consultando...' : 'Verificar última tentativa recebida'}
                 </button>
+                <button type="button" onClick={handleWebhookSelfTest} disabled={isProbingWebhook}
+                  className="rounded-xl border border-emerald-400/40 bg-emerald-500/15 p-3 text-xs text-emerald-200 font-bold disabled:opacity-50">
+                  {isProbingWebhook ? 'Testando...' : 'Executar autoteste interno (sem pagamento)'}
+                </button>
+                {webhookProbe && (
+                  <div className="text-xs space-y-1">
+                    <p className={webhookProbe.success ? 'text-emerald-300' : 'text-amber-300'}>
+                      {webhookProbe.message || webhookProbe.error || 'Autoteste não concluído'}
+                    </p>
+                    {typeof webhookProbe.routeHttpStatus === 'number' && <p>HTTP: {webhookProbe.routeHttpStatus}</p>}
+                    <p>Assinatura aceita: {webhookProbe.webhookSignatureAccepted ? 'Sim' : 'Não'}</p>
+                    <p>Diagnóstico registrado: {webhookProbe.databaseDiagnosticRecorded ? 'Sim' : 'Não'}</p>
+                    <p>HMAC verificado no banco: {webhookProbe.databaseDiagnosticSignatureVerified ? 'Sim' : 'Não'}</p>
+                    {webhookProbe.diagnosticDbErrorCode && <p>Código do banco: {webhookProbe.diagnosticDbErrorCode}</p>}
+                  </div>
+                )}
                 {webhookDiagnostics && (
                   <div className="text-xs space-y-2">
                     <p className="text-slate-300">{webhookDiagnostics.message}</p>
