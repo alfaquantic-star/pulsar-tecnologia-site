@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { randomUUID } from 'node:crypto';
-import { requireAdmin } from '../_lib/admin-auth.js';
+import { requireAdmin, verifyCustomerIdentity, adminDatabase } from '../_lib/admin-auth.js';
 import { verifyCheckout, CheckoutError } from '../_lib/verify-checkout.js';
 import { buildPendingOrderDraft } from '../_lib/pending-order.js';
 import { merchantOrderMatchesPayment } from '../_lib/mp-merchant-order.js';
@@ -23,10 +23,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(403).json({ error: 'Somente no Preview da Vercel.' });
   }
   try {
-    const auth = await requireAdmin(req);
-    if (!auth) return res.status(403).json({ error: 'Acesso administrativo necessário.' });
     const body = req.body;
     const action = body?.action;
+    const customerStage = action === 'stage_customer_test_order';
+    // This action cannot run until manually opted in for Preview testing.
+    // It NEVER creates a payment preference or charges a customer.
+    if (customerStage && process.env.PULSAR_ENABLE_CUSTOMER_TEST_STAGING !== 'true') {
+      return res.status(503).json({ error: 'Vinculação de pedidos de teste ainda desativada.' });
+    }
+    const verifiedCustomer = customerStage ? await verifyCustomerIdentity(req) : null;
+    if (customerStage && !verifiedCustomer) {
+      return res.status(403).json({ error: 'Conta de cliente verificada necessária.' });
+    }
+    const auth = customerStage
+      ? { db: adminDatabase() }
+      : await requireAdmin(req);
+    if (!auth) return res.status(403).json({ error: 'Acesso administrativo necessário.' });
     // Recover an already completed TEST payment when notifications are
     // unavailable. Admin authentication and seller-only test credentials
     // are mandatory; this never relies on a browser's success URL.
@@ -147,7 +159,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         message: 'Pagamento conferido diretamente no Mercado Pago e registrado no Supabase.' });
     }
 
-    if (action !== 'stage_order' && action !== 'create_test_preference') {
+    if (action !== 'stage_order' && action !== 'create_test_preference' && !customerStage) {
       return res.status(400).json({ error: 'Ação de teste inválida.' });
     }
     // Fail closed BEFORE writing any pending order if the preference test
@@ -188,6 +200,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           String(body.cep || '').replace(/\D/g,'')) {
       return res.status(400).json({ error: 'Endereço não corresponde ao CEP de frete.' });
     }
+    // Only a verified Supabase Auth session can own a customer order.
+    // Never accept a customer UUID from request body or a typed email alone.
+    if (customerStage &&
+        String(body.customer.email || '').trim().toLowerCase() !==
+          verifiedCustomer!.email?.trim().toLowerCase()) {
+      return res.status(403).json({ error: 'O e-mail do pedido precisa corresponder à conta verificada.' });
+    }
     // The browser never determines monetary amounts.
     const verified = {
       lines: quote.lines.map(line => ({
@@ -203,9 +222,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       customer: body.customer,
       address: body.address
     };
-    const draft = buildPendingOrderDraft(verified, key);
+    const draft = buildPendingOrderDraft(verified, key, customerStage ? verifiedCustomer!.id : undefined);
     const { data: inserted, error: insertError } = await auth.db.from('orders')
-      .insert(draft).select('id,order_number,checkout_payload_hash,payment_status,mercado_pago_preference_id')
+      .insert(draft).select('id,order_number,customer_id,checkout_payload_hash,payment_status,mercado_pago_preference_id')
       .single();
     let row = inserted;
     let wasReused = false;
@@ -215,12 +234,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         return res.status(503).json({ error: 'Não foi possível registrar o pedido pendente.' });
       }
       const existing = await auth.db.from('orders')
-        .select('id,order_number,checkout_payload_hash,payment_status,mercado_pago_preference_id')
+        .select('id,order_number,customer_id,checkout_payload_hash,payment_status,mercado_pago_preference_id')
         .eq('checkout_idempotency_key', key).maybeSingle();
       if (existing.error || !existing.data) {
         return res.status(409).json({ error: 'Já existe uma tentativa com este identificador.' });
       }
-      if (existing.data.checkout_payload_hash !== draft.checkout_payload_hash) {
+      if (existing.data.checkout_payload_hash !== draft.checkout_payload_hash ||
+          existing.data.customer_id !== draft.customer_id) {
         return res.status(409).json({ error: 'Esta tentativa já foi usada com outro carrinho, frete ou cliente.' });
       }
       row = existing.data;
@@ -229,7 +249,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!row) return res.status(503).json({ error: 'Pedido indisponível.' });
 
     // Stage-only is safe: does not create a Mercado Pago preference or reserve stock.
-    if (action === 'stage_order') {
+    if (action === 'stage_order' || customerStage) {
       return res.status(200).json({
         success: true, testOnly: true, paymentCreated: false,
         id: row.id, orderNumber: row.order_number, reused: wasReused,
