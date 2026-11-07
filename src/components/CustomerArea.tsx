@@ -39,6 +39,7 @@ export const CustomerArea: React.FC = () => {
   useEffect(() => {
     let active = true;
     setPrivateOrders([]);
+    setLastUpdated(null);
     if (!currentUser || currentUser.role !== 'customer') {
       setHistoryState('ready');
       return () => { active = false; };
