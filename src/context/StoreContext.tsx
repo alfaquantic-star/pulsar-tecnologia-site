@@ -298,7 +298,9 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const client = getSupabaseClient();
     if (!client) return;
     let cancelled = false;
-    const restore = async () => {
+    const restoreVerifiedCustomer = async () => {
+      // Fetch the user from Supabase Auth, never infer ownership from query params
+      // or a typed email. The SDK handles the redirect session fragment.
       const { data, error } = await client.auth.getUser();
       if (cancelled || error || !data.user?.email || data.user.app_metadata?.role === 'admin') return;
       setCurrentUser({
@@ -308,9 +310,24 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         createdAt: data.user.created_at, addresses: []
       });
       setOrders([]);
+      setIsAuthModalOpen(false);
     };
-    void restore();
-    return () => { cancelled = true; };
+    // Auth can finish processing the link after React mounts.
+    const { data: listener } = client.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_IN' && session?.access_token) {
+        // Defer Auth calls out of the synchronous auth-change handler.
+        setTimeout(() => { if (!cancelled) void restoreVerifiedCustomer(); }, 0);
+      }
+      if (event === 'SIGNED_OUT' && !cancelled) {
+        setCurrentUser(null);
+        setOrders([]);
+      }
+    });
+    void restoreVerifiedCustomer();
+    return () => {
+      cancelled = true;
+      listener.subscription.unsubscribe();
+    };
   }, []);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'success') => {
@@ -716,7 +733,14 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     const client = getSupabaseClient();
     if (!client) return false;
     try {
-      const { error } = await client.auth.signInWithOtp({ email: clean, options: { shouldCreateUser: true } });
+      const { error } = await client.auth.signInWithOtp({
+        email: clean,
+        options: {
+          shouldCreateUser: true,
+          // Preview-only, fixed destination: never fall back to the shared project's localhost Site URL.
+          emailRedirectTo: 'https://pulsar-tecnologia-site-git-security-server-api-phase1-qr-flow.vercel.app/'
+        }
+      });
       return !error;
     } catch { return false; }
   };
