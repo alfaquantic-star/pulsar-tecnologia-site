@@ -472,7 +472,7 @@ export async function fetchCustomerOrdersFromSupabase(): Promise<Order[] | null>
     const { data: sessionData } = await client.auth.getSession();
     const token = sessionData.session?.access_token;
     if (!token) return null;
-    const response = await fetch('/api/customer/orders', {
+    const response = await fetch('/api/admin/orders?scope=customer', {
       method: 'GET', cache: 'no-store',
       headers: { Authorization: 'Bearer ' + token }
     });
