@@ -33,6 +33,8 @@ export const CustomerArea: React.FC = () => {
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
   const [privateOrders, setPrivateOrders] = useState<Order[]>([]);
   const [historyState, setHistoryState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -49,11 +51,15 @@ export const CustomerArea: React.FC = () => {
         setHistoryState('error');
         return;
       }
+      // Defend against accidentally showing unverified/other-customer rows.
       setPrivateOrders(result.filter(order => order.customerId === currentUser.id));
+      setLastUpdated(new Date());
       setHistoryState('ready');
+    }).catch(() => {
+      if (active) setHistoryState('error');
     });
     return () => { active = false; };
-  }, [currentUser?.id, currentUser?.role]);
+  }, [currentUser?.id, currentUser?.role, refreshVersion]);
   const [showNewAddressModal, setShowNewAddressModal] = useState(false);
 
   // New address form
@@ -202,13 +208,30 @@ export const CustomerArea: React.FC = () => {
       {/* Content Area */}
       {activeTab === 'orders' && (
         <div className="space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs text-slate-400" aria-live="polite">
+              {historyState === 'loading'
+                ? 'Buscando histórico seguro...'
+                : lastUpdated && historyState === 'ready'
+                  ? 'Atualizado às ' + lastUpdated.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                  : 'Histórico ainda não atualizado'}
+            </p>
+            <button
+              type="button"
+              disabled={historyState === 'loading'}
+              onClick={() => setRefreshVersion(version => version + 1)}
+              className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold border border-white/10"
+            >
+              {historyState === 'loading' ? 'Consultando...' : 'Atualizar pedidos'}
+            </button>
+          </div>
           {historyState === 'loading' ? (
             <div role="status" className="p-7 rounded-xl border border-white/10 text-slate-300 text-sm">
               Carregando pedidos vinculados à sua conta autenticada...
             </div>
           ) : historyState === 'error' ? (
             <div role="alert" className="p-7 rounded-xl border border-amber-400/30 text-amber-200 text-sm">
-              Não foi possível consultar seus pedidos com segurança. Tente recarregar a página.
+              Não foi possível consultar seus pedidos com segurança. Clique em “Atualizar pedidos” para tentar novamente.
             </div>
           ) : myOrders.length === 0 ? (
             <div className="p-12 rounded-3xl bg-[#14141B] border border-white/5 text-center space-y-3">
