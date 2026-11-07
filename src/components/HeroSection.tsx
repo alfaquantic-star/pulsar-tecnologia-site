@@ -3,10 +3,6 @@ import {
   Sparkles, 
   ArrowRight, 
   Wifi, 
-  Star, 
-  ShieldCheck, 
-  Truck, 
-  TrendingUp, 
   CheckCircle2
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
@@ -94,73 +90,30 @@ export const HeroSection: React.FC = () => {
             </div>
           </div>
 
-          {/* Right Column: Hero Visual Product Floating with NFC Glow */}
+          {/* Right Column: new Google NFC / QR review plaque replacing old mockup */}
           <div className="lg:col-span-5 relative flex items-center justify-center">
-            {/* Background Halo */}
-            <div className="absolute inset-0 bg-gradient-to-tr from-[#FF5500]/20 via-[#FFAA00]/10 to-transparent rounded-full blur-2xl" />
-
-            {/* Glowing 3D Plate Card or Custom Hero Mockup */}
-            {settings.heroImageUrl ? (
-              <div className="relative max-w-sm rounded-3xl overflow-hidden border-2 border-[#FF5500]/50 shadow-2xl shadow-[#FF5500]/30 transform hover:scale-105 transition-all duration-500">
-                <div className="absolute -top-3 -right-3 z-20 bg-emerald-500 text-black font-extrabold text-xs px-3.5 py-1.5 rounded-2xl shadow-xl flex items-center gap-1.5 animate-bounce">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>1 Toque = 5 Estrelas</span>
-                </div>
-                <img src={settings.heroImageUrl} alt="Placa Pulsar" className="w-full h-auto object-cover max-h-96" />
+            <div className="absolute inset-0 bg-gradient-to-tr from-[#FF5500]/20 via-[#FFAA00]/10 to-transparent rounded-full blur-2xl pointer-events-none" />
+            <div className="relative w-full max-w-[440px] mx-auto px-2 py-5 sm:py-0">
+              <div className="absolute top-1 right-0 z-20 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500 text-black font-extrabold text-[10px] sm:text-xs shadow-xl shadow-emerald-500/20">
+                <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
+                <span>1 Toque = 5 Estrelas</span>
               </div>
-            ) : (
-              <div className="relative w-72 sm:w-80 rounded-3xl bg-gradient-to-b from-[#181820] via-[#121217] to-[#09090B] p-6 border-2 border-[#FF5500]/50 shadow-2xl shadow-[#FF5500]/25 transform hover:scale-105 hover:-rotate-1 transition-all duration-500">
-                {/* Floating notification badge */}
-                <div className="absolute -top-4 -right-4 bg-emerald-500 text-black font-extrabold text-xs px-3.5 py-1.5 rounded-2xl shadow-xl flex items-center gap-1.5 animate-bounce">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>1 Toque = 5 Estrelas</span>
-                </div>
-
-                {/* Plate Header */}
-                <div className="flex items-center justify-between pb-3 border-b border-white/10">
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-black text-xs text-white">PULSAR</span>
-                    <span className="text-[10px] text-[#FFAA00] font-bold">SMART PLATE</span>
-                  </div>
-                  <div className="h-2 w-2 rounded-full bg-[#FF5500] animate-ping" />
-                </div>
-
-                {/* Plate Body */}
-                <div className="my-6 text-center space-y-3">
-                  <p className="text-[11px] text-slate-400 uppercase tracking-widest font-semibold">
-                    Avalie Nossa Empresa
-                  </p>
-                  <h3 className="text-lg font-black text-white text-gradient-silver">
-                    Sua Empresa no Balcão
-                  </h3>
-
-                  <div className="flex justify-center gap-1 text-[#FFAA00]">
-                    {[...Array(5)].map((_, i) => (
-                      <Star key={i} className="w-4 h-4 fill-current drop-shadow-[0_0_8px_rgba(255,170,0,0.8)]" />
-                    ))}
-                  </div>
-
-                  {/* NFC Center Sensor */}
-                  <div className="relative py-4 flex items-center justify-center">
-                    <div className="absolute inset-0 rounded-full border-2 border-[#FF5500]/40 animate-nfc-pulse pointer-events-none" />
-                    <div className="w-20 h-20 rounded-full bg-gradient-to-tr from-[#FF5500]/40 to-[#FFAA00]/20 border border-[#FF5500] flex flex-col items-center justify-center text-[#FFAA00] shadow-xl shadow-[#FF5500]/30">
-                      <Wifi className="w-8 h-8 rotate-90" />
-                      <span className="text-[8px] font-black tracking-widest text-white mt-1">APROXIME</span>
-                    </div>
-                  </div>
-
-                  <p className="text-[11px] text-slate-400">
-                    Aproxime qualquer smartphone ou aponte a câmera para o QR Code
-                  </p>
-                </div>
-
-                {/* Plate Footer */}
-                <div className="pt-3 border-t border-white/10 flex items-center justify-between text-[10px] text-slate-400">
-                  <span>CHIP NTAG213 ULTRA</span>
-                  <span className="text-[#FFAA00] font-bold">100% VITALÍCIO</span>
-                </div>
+              <img
+                src="/assets/placa-smart-google-nfc.svg"
+                alt="Placa Smart de Avaliações Google em PVC, com tecnologia NFC e QR Code"
+                width={520}
+                height={690}
+                loading="eager"
+                decoding="async"
+                fetchPriority="high"
+                className="relative block w-full h-auto max-h-[560px] object-contain rounded-[28px] drop-shadow-[0_18px_35px_rgba(255,100,0,0.25)] transition-transform duration-500 hover:scale-[1.025]"
+              />
+              <div className="mt-3 flex flex-wrap justify-center gap-2 text-[10px] sm:text-xs text-slate-300">
+                <span className="rounded-full border border-[#FF5500]/40 bg-[#16151C] px-3 py-1">Tecnologia NFC</span>
+                <span className="rounded-full border border-[#FF5500]/40 bg-[#16151C] px-3 py-1">QR Code</span>
+                <span className="rounded-full border border-[#FF5500]/40 bg-[#16151C] px-3 py-1">PVC resistente</span>
               </div>
-            )}
+            </div>
           </div>
         </div>
       </div>
