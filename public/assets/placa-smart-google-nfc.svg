@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 690" role="img" aria-labelledby="title desc">
+<title id="title">Placa Smart NFC de avaliações Google</title>
+<desc id="desc">Placa de avaliações Google com cinco estrelas, QR ilustrativo e tecnologia NFC em suporte de balcão</desc>
+<defs>
+  <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#361608"/><stop offset=".42" stop-color="#1a1110"/><stop offset="1" stop-color="#090b12"/></linearGradient>
+  <linearGradient id="glass" x1="0" y1="0" x2=".7" y2="1"><stop stop-color="#2f2d33"/><stop offset=".5" stop-color="#080a0e"/><stop offset="1" stop-color="#27232b"/></linearGradient>
+  <linearGradient id="white" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff"/><stop offset="1" stop-color="#e8e8eb"/></linearGradient>
+  <linearGradient id="wave" x1="0" y1="0" x2="1" y2="0"><stop stop-color="#fa5a00"/><stop offset=".25" stop-color="#ffc400"/><stop offset=".52" stop-color="#16a767"/><stop offset=".75" stop-color="#06a7dc"/><stop offset="1" stop-color="#0062c4"/></linearGradient>
+  <linearGradient id="orange" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ffc52d"/><stop offset=".5" stop-color="#ff6b00"/><stop offset="1" stop-color="#ad2e00"/></linearGradient>
+  <filter id="halo" x="-70%" y="-70%" width="240%" height="240%"><feGaussianBlur stdDeviation="18"/></filter>
+  <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%"><feDropShadow dx="0" dy="16" stdDeviation="17" flood-color="#000" flood-opacity=".65"/></filter>
+  <clipPath id="plate"><rect x="75" y="72" width="370" height="537" rx="12"/></clipPath>
+  <pattern id="qr" patternUnits="userSpaceOnUse" width="14" height="14"><rect width="14" height="14" fill="#fff"/><path fill="#101013" d="M0 0h7v7H0zM9 9h5v5H9zM3 10h4v4H3z"/></pattern>
+</defs>
+<rect width="520" height="690" rx="36" fill="url(#bg)"/>
+<ellipse cx="245" cy="600" rx="202" ry="49" fill="#ff6c06" opacity=".38" filter="url(#halo)"/>
+<ellipse cx="256" cy="627" rx="218" ry="28" fill="#000" opacity=".58" filter="url(#halo)"/>
+<rect x="60" y="57" width="400" height="560" rx="24" fill="#ff7500" opacity=".5" filter="url(#halo)"/>
+<g filter="url(#shadow)">
+<rect x="69" y="66" width="382" height="549" rx="18" fill="#ff8b11"/>
+<rect x="75" y="72" width="370" height="537" rx="12" fill="url(#glass)"/>
+<g clip-path="url(#plate)">
+<path d="M75 72h370v284c-65 10-105-10-181 17-80 29-134 13-189 7Z" fill="#101116"/>
+<path d="M75 356c85 18 141 7 207-13 60-18 107 1 163-9v24c-59 14-112-5-174 16-80 28-143 27-196 10Z" fill="url(#wave)"/>
+<path d="M75 382c82 23 148-3 208-16 66-15 109-6 162-9v252H75Z" fill="url(#white)"/>
+<g fill="#ffc400"><path d="M126 137l5 13h14l-11 8 4 14-12-8-12 8 4-14-11-8h14z"/><path d="M192 137l5 13h14l-11 8 4 14-12-8-12 8 4-14-11-8h14z"/><path d="M258 137l5 13h14l-11 8 4 14-12-8-12 8 4-14-11-8h14z"/><path d="M324 137l5 13h14l-11 8 4 14-12-8-12 8 4-14-11-8h14z"/><path d="M390 137l5 13h14l-11 8 4 14-12-8-12 8 4-14-11-8h14z"/></g>
+<g fill="#fff" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-weight="800"><text x="260" y="214" font-size="26">AVALIE NOSSA EMPRESA</text><text x="260" y="250" font-size="30">NO GOOGLE</text></g>
+<circle cx="260" cy="321" r="45" fill="#fff"/>
+<g transform="translate(227 292) scale(.72)"><path d="M84 36a44 44 0 0 0-73-10l13 13c14-15 34-16 47-6z" fill="#ea4335"/><path d="M11 26A44 44 0 0 0 9 72l17-12a25 25 0 0 1-2-21z" fill="#fbbc05"/><path d="M9 72a44 44 0 0 0 74-13l-17-10C58 68 38 72 26 60z" fill="#34a853"/><path d="M89 41H46v18h25c-2 11-12 19-12 19l17 10c12-10 18-28 13-47z" fill="#4285f4"/></g>
+<g fill="#17171c" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-weight="800"><text x="260" y="420" font-size="21">APROXIME O CELULAR</text><text x="260" y="446" font-size="21">OU ESCANEIE O QR CODE</text></g>
+<rect x="117" y="473" width="133" height="116" rx="5" fill="#fff"/>
+<rect x="120" y="476" width="127" height="110" fill="url(#qr)"/>
+<g fill="white" stroke="#111" stroke-width="5"><rect x="126" y="481" width="30" height="30"/><rect x="209" y="481" width="30" height="30"/><rect x="126" y="548" width="30" height="30"/></g>
+<g fill="#111"><rect x="134" y="489" width="14" height="14"/><rect x="217" y="489" width="14" height="14"/><rect x="134" y="556" width="14" height="14"/></g>
+<path d="M269 472v111" stroke="#34343b" stroke-width="2"/>
+<circle cx="269" cy="527" r="12" fill="#090909"/>
+<g transform="translate(293 496)" fill="none" stroke="#111" stroke-width="7" stroke-linecap="round">
+<path d="M11 28a23 23 0 0 1 0 39"/><path d="M23 18a38 38 0 0 1 0 59"/><path d="M35 8a55 55 0 0 1 0 79"/>
+<rect x="78" y="12" width="55" height="84" rx="10" fill="#fff"/><path d="M90 60a20 20 0 0 1 0-16M100 68a31 31 0 0 1 0-32"/>
+</g>
+<text x="398" y="612" font-size="15" text-anchor="end" font-family="Arial,Helvetica,sans-serif" font-weight="800" fill="#ff6b00">NFC + QR</text>
+</g>
+<rect x="75" y="72" width="370" height="537" rx="12" fill="none" stroke="#ffb23e" stroke-width="3"/>
+<path d="M86 86h342" stroke="#fff" stroke-opacity=".32" stroke-width="3"/>
+<path d="M72 612h375l14 40H61Z" fill="#292629" stroke="#8a6a4c" stroke-width="2"/>
+<path d="M61 652h400v13H61Z" fill="#131417"/>
+</g>
+<text x="260" y="676" fill="#f1b986" text-anchor="middle" font-size="11" font-family="Arial,Helvetica,sans-serif" letter-spacing="1.8">PLACA SMART DE AVALIAÇÕES</text>
+</svg>
