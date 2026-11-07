@@ -24,15 +24,13 @@ export const AuthModal: React.FC = () => {
     setAuthModalTab,
     loginAsAdmin,
     requestCustomerOtp,
-    verifyCustomerOtp,
     currentUser,
     logout
   } = useStore();
 
   // Customers authenticate by proving possession of their email.
   const [customerEmail, setCustomerEmail] = useState('');
-  const [customerOtp, setCustomerOtp] = useState('');
-  const [otpSent, setOtpSent] = useState(false);
+  const [linkSent, setLinkSent] = useState(false);
   const [customerBusy, setCustomerBusy] = useState(false);
   const [customerError, setCustomerError] = useState('');
 
@@ -51,14 +49,9 @@ export const AuthModal: React.FC = () => {
     setCustomerBusy(true);
     setCustomerError('');
     try {
-      if (!otpSent) {
-        const ok = await requestCustomerOtp(customerEmail);
-        if (ok) setOtpSent(true);
-        else setCustomerError('Não foi possível enviar o código. Confira o e-mail ou tente novamente.');
-      } else {
-        const ok = await verifyCustomerOtp(customerEmail, customerOtp);
-        if (!ok) setCustomerError('Código inválido ou expirado. Confira o e-mail e tente novamente.');
-      }
+      const ok = await requestCustomerOtp(customerEmail);
+      if (ok) setLinkSent(true);
+      else setCustomerError('Não foi possível enviar o link. Verifique se seu e-mail é autorizado na equipe Supabase e tente novamente.');
     } finally {
       setCustomerBusy(false);
     }
@@ -130,7 +123,7 @@ export const AuthModal: React.FC = () => {
           </button>
         </div>
 
-        {/* TAB 1: CUSTOMER EMAIL OTP */}
+        {/* TAB 1: CUSTOMER EMAIL MAGIC LINK */}
         {authModalTab === 'customer' && (
           <div className="space-y-5 animate-in fade-in duration-150">
             <div>
@@ -139,42 +132,32 @@ export const AuthModal: React.FC = () => {
               </div>
               <h3 className="text-xl font-black text-white">Entrar na Conta de Cliente</h3>
               <p className="text-xs text-slate-400 mt-1">
-                Confirme seu endereço de e-mail para entrar com segurança.
-                O histórico de pedidos ficará disponível após vinculá-los à conta verificada.
+                Receba um link de confirmação no e-mail e abra-o para entrar com segurança.
+                Os pedidos aparecerão depois de vinculados à conta verificada.
               </p>
             </div>
-            {customerError && (
-              <div role="alert" className="p-3 rounded-xl border border-red-500/50 text-red-200 text-xs">{customerError}</div>
-            )}
+            {customerError && <div role="alert"
+              className="p-3 rounded-xl border border-red-500/50 text-red-200 text-xs">{customerError}</div>}
+            {linkSent && <div role="status"
+              className="p-3 rounded-xl border border-emerald-500/40 text-emerald-200 text-xs">
+                Link solicitado. Abra o e-mail da Supabase mais recente e clique em
+                "Confirm email address" ou "Sign in". O link deve voltar à Pulsar Tecnologia.
+                Não use o link antigo que apontava para localhost:3000.
+              </div>}
             <form onSubmit={handleCustomerSubmit} className="space-y-3.5 text-xs">
               <label className="text-slate-300 font-bold block">E-mail
-                <input type="email" required disabled={otpSent || customerBusy}
-                  value={customerEmail} onChange={e => setCustomerEmail(e.target.value)}
+                <input type="email" required disabled={customerBusy}
+                  value={customerEmail} onChange={e => { setCustomerEmail(e.target.value); setLinkSent(false); }}
                   autoComplete="email" placeholder="seuemail@exemplo.com"
                   className="mt-2 w-full bg-[#181820] text-white px-3 py-3 rounded-xl border border-white/10 text-sm" />
               </label>
-              {otpSent && (
-                <label className="text-slate-300 font-bold block">
-                  Código de verificação recebido por e-mail
-                  <input type="text" required inputMode="numeric" pattern="[0-9]{6,8}" maxLength={8}
-                    autoComplete="one-time-code" value={customerOtp}
-                    onChange={e => setCustomerOtp(e.target.value.replace(/\\D/g, ''))}
-                    placeholder="Código de 6 dígitos"
-                    className="mt-2 w-full bg-[#181820] text-white px-3 py-3 rounded-xl border border-white/10 text-sm" />
-                </label>
-              )}
               <button type="submit" disabled={customerBusy}
                 className="w-full py-3.5 rounded-2xl bg-gradient-to-r from-[#FF5500] to-[#FFAA00] text-black font-extrabold text-sm disabled:opacity-50">
-                {customerBusy ? 'Verificando...' : otpSent ? 'Confirmar código e entrar' : 'Enviar código por e-mail'}
+                {customerBusy ? 'Enviando...' : linkSent ? 'Solicitar novo link' : 'Enviar link de acesso'}
               </button>
-              {otpSent && <button type="button" onClick={() => {
-                setOtpSent(false); setCustomerOtp(''); setCustomerError('');
-              }} className="text-xs text-[#FFAA00] hover:underline">
-                Alterar e-mail ou solicitar outro código
-              </button>}
               <p className="text-slate-400 text-xs">
-                Se o e-mail contiver apenas um link em vez do código, será necessário
-                configurar o modelo OTP no Supabase Auth antes de usar este formulário.
+                O serviço gratuito da Supabase só envia e-mails aos membros autorizados
+                da equipe. Não compartilhe seus links de acesso.
               </p>
             </form>
           </div>
