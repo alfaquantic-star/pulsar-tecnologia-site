@@ -46,7 +46,15 @@ const validCents = (v: unknown): v is number =>
   typeof v === 'number' && Number.isSafeInteger(v) && v >= 0 && v <= 100000000;
 const fail = (message: string): never => { throw new Error(message); };
 
-export function buildPendingOrderDraft(verified: VerifiedCheckout, idempotencyKey: string) {
+export function buildPendingOrderDraft(
+  verified: VerifiedCheckout, idempotencyKey: string, verifiedCustomerId?: string
+) {
+  // Only server-verified Supabase Auth UUIDs can be passed in this third argument.
+  // The HTTP caller must never be permitted to supply it as a request body field.
+  if (verifiedCustomerId !== undefined &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(verifiedCustomerId)) {
+    fail('Invalid authenticated customer UUID');
+  }
   if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(idempotencyKey)) fail('Invalid idempotency key');
   if (!verified || !Array.isArray(verified.lines) || !verified.lines.length || verified.lines.length > 20) {
     fail('Verified cart required');
@@ -100,7 +108,8 @@ export function buildPendingOrderDraft(verified: VerifiedCheckout, idempotencyKe
     shipping: verified.shipping,
     discountCents: verified.discountCents,
     subtotalCents,
-    finalCents
+    finalCents,
+    ...(verifiedCustomerId ? { authenticatedCustomerId: verifiedCustomerId } : {})
   })).digest('hex');
   const hash = createHash('sha256').update(idempotencyKey).digest('hex').slice(0, 24);
   return {
@@ -110,6 +119,7 @@ export function buildPendingOrderDraft(verified: VerifiedCheckout, idempotencyKe
     checkout_payload_hash: checkoutPayloadHash,
     customer_name: customer.fullName.trim(),
     customer_email: customer.email.trim().toLowerCase(),
+    customer_id: verifiedCustomerId ?? null,
     customer_phone: customer.phone.trim(),
     customer_cpf: customer.cpf.trim(),
     shipping_address: { ...address, zipCode: address.zipCode.replace(/\D/g,'') },
