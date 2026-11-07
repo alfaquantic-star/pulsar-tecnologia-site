@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   Package, 
   MapPin, 
@@ -15,12 +15,12 @@ import {
   LogOut
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
-import { Address } from '../types';
+import { Address, Order } from '../types';
+import { fetchCustomerOrdersFromSupabase } from '../lib/supabase';
 
 export const CustomerArea: React.FC = () => {
   const { 
     currentUser, 
-    orders, 
     setCurrentView, 
     logout, 
     updateUserProfile, 
@@ -31,6 +31,29 @@ export const CustomerArea: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<'orders' | 'addresses' | 'profile'>('orders');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [privateOrders, setPrivateOrders] = useState<Order[]>([]);
+  const [historyState, setHistoryState] = useState<'loading' | 'ready' | 'error'>('loading');
+
+  useEffect(() => {
+    let active = true;
+    setPrivateOrders([]);
+    if (!currentUser || currentUser.role !== 'customer') {
+      setHistoryState('ready');
+      return () => { active = false; };
+    }
+    setHistoryState('loading');
+    // Token is verified server-side; this client never supplies order owner IDs/emails.
+    void fetchCustomerOrdersFromSupabase().then(result => {
+      if (!active) return;
+      if (!result) {
+        setHistoryState('error');
+        return;
+      }
+      setPrivateOrders(result.filter(order => order.customerId === currentUser.id));
+      setHistoryState('ready');
+    });
+    return () => { active = false; };
+  }, [currentUser?.id, currentUser?.role]);
   const [showNewAddressModal, setShowNewAddressModal] = useState(false);
 
   // New address form
@@ -71,12 +94,9 @@ export const CustomerArea: React.FC = () => {
     );
   }
 
-  // This local profile is NOT authenticated. Do not fetch orders using its email.
-  // Server-side identity verification is required before enabling customer order history.
-  // Filter only already-local ephemeral orders shown to this browser.
-  const myOrders = orders.filter(
-    (o) => o.customerId === currentUser.id || o.customerEmail.toLowerCase() === currentUser.email.toLowerCase()
-  );
+  // The server only returns orders linked to this verified Supabase Auth UUID.
+  // Guest/legacy orders are intentionally not accessible via email equality.
+  const myOrders = privateOrders;
 
   const selectedOrder = selectedOrderId ? myOrders.find((o) => o.id === selectedOrderId) : myOrders[0];
 
@@ -182,12 +202,20 @@ export const CustomerArea: React.FC = () => {
       {/* Content Area */}
       {activeTab === 'orders' && (
         <div className="space-y-6">
-          {myOrders.length === 0 ? (
+          {historyState === 'loading' ? (
+            <div role="status" className="p-7 rounded-xl border border-white/10 text-slate-300 text-sm">
+              Carregando pedidos vinculados à sua conta autenticada...
+            </div>
+          ) : historyState === 'error' ? (
+            <div role="alert" className="p-7 rounded-xl border border-amber-400/30 text-amber-200 text-sm">
+              Não foi possível consultar seus pedidos com segurança. Tente recarregar a página.
+            </div>
+          ) : myOrders.length === 0 ? (
             <div className="p-12 rounded-3xl bg-[#14141B] border border-white/5 text-center space-y-3">
               <Package className="w-12 h-12 text-slate-600 mx-auto" />
-              <h3 className="text-base font-bold text-white">Você ainda não possui pedidos</h3>
+              <h3 className="text-base font-bold text-white">Nenhum pedido vinculado a esta conta</h3>
               <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                Adquira sua placa inteligente com NFC e comece a impulsionar suas avaliações no Google hoje mesmo.
+                Pedidos antigos ou feitos como convidado não aparecem automaticamente. A vinculação segura desses pedidos ainda está em desenvolvimento.
               </p>
               <button
                 onClick={() => setCurrentView('combos')}

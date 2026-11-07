@@ -49,3 +49,20 @@ export async function requireAdmin(req: VercelRequest) {
   if (!user) return null;
   return { user, db: adminDatabase() };
 }
+
+/**
+ * The user's Auth UUID is the sole source of order ownership. A confirmed
+ * email is required, but email itself must NEVER be used as an order filter.
+ */
+export async function verifyCustomerIdentity(req: VercelRequest) {
+  const authorization = req.headers.authorization;
+  const token = authorization?.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
+  if (!token || token.length > 8192) return null;
+  const client = createClient(PROJECT_URL, PUBLIC_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false }
+  });
+  const { data, error } = await client.auth.getUser(token);
+  if (error || !data.user?.id || !data.user.email_confirmed_at ||
+      data.user.app_metadata?.role === 'admin') return null;
+  return data.user;
+}

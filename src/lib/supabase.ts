@@ -460,6 +460,55 @@ export async function fetchOrdersFromSupabase(): Promise<Order[] | null> {
   }
 }
 
+/**
+ * Customer history can only be retrieved with the current Supabase Auth bearer.
+ * A typed email or a browser-side customer ID never authorizes an order query.
+ * Server response includes only orders associated to the verified Auth UUID.
+ */
+export async function fetchCustomerOrdersFromSupabase(): Promise<Order[] | null> {
+  const client = getSupabaseClient();
+  if (!client) return null;
+  try {
+    const { data: sessionData } = await client.auth.getSession();
+    const token = sessionData.session?.access_token;
+    if (!token) return null;
+    const response = await fetch('/api/customer/orders', {
+      method: 'GET', cache: 'no-store',
+      headers: { Authorization: 'Bearer ' + token }
+    });
+    if (!response.ok) return null;
+    const result = await response.json();
+    if (!Array.isArray(result?.data)) return null;
+    return result.data.map((row: any): Order => ({
+      id: row.id,
+      orderNumber: row.order_number || row.id,
+      customerId: row.customer_id,
+      customerName: row.customer_name,
+      customerEmail: row.customer_email,
+      customerWhatsapp: '',
+      customerCpf: '',
+      items: Array.isArray(row.items) ? row.items : [],
+      subtotal: Number(row.subtotal),
+      discount: Number(row.discount_amount || 0),
+      shipping: {
+        id: 'melhor-envio',
+        carrier: row.shipping_carrier || 'Melhor Envio / Correios',
+        service: row.shipping_service || 'SEDEX Expresso',
+        price: Number(row.shipping_price || 0),
+        estimatedDays: 3,
+      },
+      total: Number(row.total_amount || row.subtotal),
+      paymentMethod: row.payment_method || 'pix',
+      paymentStatus: (row.payment_status as OrderPaymentStatus) || 'pending',
+      shippingStatus: (row.shipping_status as OrderShippingStatus) || 'pending',
+      trackingCode: row.tracking_code,
+      shippingAddress: row.shipping_address,
+      pixQrCodeUrl: null,
+      createdAt: row.created_at,
+    }));
+  } catch { return null; }
+}
+
 export async function createOrderInSupabase(_order: Order): Promise<boolean> {
   // Checkout must calculate price/shipping on the server first.
   // A client-side order must never be persisted or accepted as paid.
