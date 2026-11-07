@@ -79,6 +79,10 @@ jobs:
         run: psql --set ON_ERROR_STOP=1 --file supabase/tests/pulsar_rls_post_cutover.sql
       - name: Test public catalog and private tables as browser roles
         run: psql --set ON_ERROR_STOP=1 --file supabase/tests/rls_functional_smoke_ci.sql
+      - name: Check read-only RLS release verdict in disposable PostgreSQL
+        run: |
+          verdict=$(psql --set ON_ERROR_STOP=1 -At --file supabase/tests/live_release_rls_readonly_audit.sql | tail -n 1)
+          test "$verdict" = "READY" || { echo "RLS verdict is $verdict, expected READY"; exit 1; }
       - name: Actually deny unauthorized SQL reads/writes as browser roles
         run: psql --set ON_ERROR_STOP=1 --file supabase/tests/rls_negative_privilege_ci.sql
       - name: Verify test-only webhook inbox access in isolated database
