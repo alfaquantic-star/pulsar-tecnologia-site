@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { requireAdmin, verifyCustomerIdentity, adminDatabase } from '../_lib/admin-auth.js';
+import { getCustomerOrdersByVerifiedId } from '../_lib/customer-order-history.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Cache-Control', 'no-store');
@@ -19,13 +20,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
       const user = await verifyCustomerIdentity(req);
       if (!user) return res.status(403).json({ code: 'customer_identity_required' });
-      const { data, error } = await adminDatabase().from('orders')
-        .select('id,order_number,customer_id,customer_name,customer_email,items,subtotal,discount_amount,shipping_price,shipping_carrier,shipping_service,total_amount,payment_method,payment_status,shipping_status,tracking_code,shipping_address,created_at')
-        .eq('customer_id', user.id)
-        .order('created_at', { ascending: false })
-        .limit(50);
-      if (error) return res.status(503).json({ code: 'orders_unavailable' });
-      return res.status(200).json({ data: data || [] });
+      const data = await getCustomerOrdersByVerifiedId(adminDatabase(), user.id);
+      return res.status(200).json({ data });
     } catch {
       return res.status(503).json({ code: 'customer_backend_unavailable' });
     }
