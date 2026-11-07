@@ -1,0 +1,94 @@
+name: Checkout Safety and Build Tests
+
+on:
+  pull_request:
+    branches: [main, security/server-api-phase1]
+  push:
+    branches: [security/server-api-phase1]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pending-order:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Offline pending-order tests
+        run: node --experimental-strip-types --test tests/*.test.ts
+
+  source-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Build frontend
+        run: bun run build
+      - name: Check server entrypoint syntax and import graph
+        run: |
+          bunx esbuild api/checkout/validate.ts --bundle --platform=node --format=esm --packages=external --outfile=/tmp/validate.mjs
+          bunx esbuild api/mercadopago/create-preference.ts --bundle --platform=node --format=esm --packages=external --outfile=/tmp/checkout.mjs
+          bunx esbuild api/mercadopago/webhook.ts --bundle --platform=node --format=esm --packages=external --outfile=/tmp/webhook.mjs
+          bunx esbuild api/admin/me.ts --bundle --platform=node --format=esm --packages=external --outfile=/tmp/admin-me.mjs
+          bunx esbuild supabase/functions/pulsar-mp-test-ingress/index.ts --bundle --platform=browser --format=esm --outfile=/tmp/mp-test-ingress.mjs
+          bunx esbuild supabase/functions/pulsar-mp-test-queue-worker/index.ts --bundle --platform=browser --format=esm --outfile=/tmp/mp-test-queue-worker.mjs
+
+
+  rls-cutover-sandbox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: pulsar_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: isolated-ci-test-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d pulsar_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 8
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: isolated-ci-test-password
+      PGDATABASE: pulsar_ci
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure PostgreSQL client
+        run: |
+          if ! command -v psql >/dev/null; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq postgresql-client
+          fi
+      - name: Seed isolated legacy tables and unsafe policies
+        run: psql --set ON_ERROR_STOP=1 --file supabase/tests/fixtures/rls_ci_schema.sql
+      - name: Apply candidate migration ONLY to throwaway PostgreSQL
+        run: psql --set ON_ERROR_STOP=1 --file supabase/migrations/20261103_prepare_pulsar_rls.sql
+      - name: Assert privileges and restrictive policies
+        run: psql --set ON_ERROR_STOP=1 --file supabase/tests/pulsar_rls_post_cutover.sql
+      - name: Test public catalog and private tables as browser roles
+        run: psql --set ON_ERROR_STOP=1 --file supabase/tests/rls_functional_smoke_ci.sql
+      - name: Check read-only RLS release verdict in disposable PostgreSQL
+        run: |
+          verdict=$(psql --set ON_ERROR_STOP=1 -At --file supabase/tests/live_release_rls_readonly_audit.sql | tail -n 1)
+          test "$verdict" = "READY" || { echo "RLS verdict is $verdict, expected READY"; exit 1; }
+      - name: Actually deny unauthorized SQL reads/writes as browser roles
+        run: psql --set ON_ERROR_STOP=1 --file supabase/tests/rls_negative_privilege_ci.sql
+      - name: Verify test-only webhook inbox access in isolated database
+        run: |
+          psql --set ON_ERROR_STOP=1 -c "CREATE ROLE service_role NOLOGIN BYPASSRLS;"
+          psql --set ON_ERROR_STOP=1 --file supabase/migrations/20261105_prepare_test_webhook_inbox.sql
+          psql --set ON_ERROR_STOP=1 --file supabase/migrations/20261106_prepare_mp_test_queue_worker.sql
+          psql --set ON_ERROR_STOP=1 -At -c "SELECT NOT has_table_privilege('anon','public.pulsar_mp_test_webhook_inbox','SELECT') AND NOT has_table_privilege('authenticated','public.pulsar_mp_test_webhook_inbox','INSERT') AND has_table_privilege('service_role','public.pulsar_mp_test_webhook_inbox','INSERT');" | grep -qx t
+

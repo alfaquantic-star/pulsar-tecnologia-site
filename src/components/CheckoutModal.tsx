@@ -34,6 +34,7 @@ export const CheckoutModal: React.FC = () => {
     setSelectedShipping,
     calculateShipping,
     isCalculatingShipping,
+    destinationCep,
     currentUser,
     createOrder,
     simulateWebhookPaymentApproval,
@@ -52,22 +53,48 @@ export const CheckoutModal: React.FC = () => {
   const [redirectUrl, setRedirectUrl] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [countdown, setCountdown] = useState<number>(3);
+  const [isCheckingCart, setIsCheckingCart] = useState(false);
+  const [serverCartResult, setServerCartResult] = useState<{
+    validated: boolean; subtotal?: number; message: string;
+    total?: number; discount?: number; couponStatus?: string;
+    shipping?: { id: string; carrier: string; service: string; price: number; estimatedDays: number } | null;
+    lines?: Array<{ id: string; name: string; quantity: number; unitPrice: number; total: number }>;
+  } | null>(null);
+  const [testOrderKey, setTestOrderKey] = useState<string | null>(null);
+  const [verifyTestOrderNumber, setVerifyTestOrderNumber] = useState('');
+  const [verifyTestPaymentId, setVerifyTestPaymentId] = useState('');
+  const [isVerifyingTestPayment, setIsVerifyingTestPayment] = useState(false);
+  const [verifyTestPaymentResult, setVerifyTestPaymentResult] = useState<{ok:boolean;message:string;checks?:Record<string,boolean>}|null>(null);
+  const [isCreatingTestOrder, setIsCreatingTestOrder] = useState(false);
+  const [testOrderResult, setTestOrderResult] = useState<{
+    success: boolean; message: string; orderNumber?: string; reused?: boolean;
+    checkoutUrl?: string; paymentStatus?: string;
+  } | null>(null);
 
   // Customer Form
-  const [fullName, setFullName] = useState(currentUser?.fullName || 'Vinicius Castro');
-  const [email, setEmail] = useState(currentUser?.email || 'contatoviniciuscastro@gmail.com');
-  const [cpf, setCpf] = useState(currentUser?.cpf || '123.456.789-00');
-  const [whatsapp, setWhatsapp] = useState(currentUser?.whatsapp || '(11) 98765-4321');
+  const [fullName, setFullName] = useState(currentUser?.fullName || '');
+  const [email, setEmail] = useState(currentUser?.email || '');
+  const [cpf, setCpf] = useState(currentUser?.cpf || '');
+  const [whatsapp, setWhatsapp] = useState(currentUser?.whatsapp || '');
 
   // Address Form
   const defaultAddr = currentUser?.addresses[0];
-  const [zipCode, setZipCode] = useState(defaultAddr?.zipCode || '04571-010');
-  const [street, setStreet] = useState(defaultAddr?.street || 'Avenida Eng. Luís Carlos Berrini');
-  const [number, setNumber] = useState(defaultAddr?.number || '105');
-  const [complement, setComplement] = useState(defaultAddr?.complement || 'Sala 81');
-  const [neighborhood, setNeighborhood] = useState(defaultAddr?.neighborhood || 'Cidade Monções');
-  const [city, setCity] = useState(defaultAddr?.city || 'São Paulo');
-  const [state, setState] = useState(defaultAddr?.state || 'SP');
+  const [zipCode, setZipCode] = useState(defaultAddr?.zipCode || destinationCep || '');
+  // Never prefill a real delivery form with an unrelated demonstration address.
+  const [street, setStreet] = useState(defaultAddr?.street || '');
+  const [number, setNumber] = useState(defaultAddr?.number || '');
+  const [complement, setComplement] = useState(defaultAddr?.complement || '');
+  const [neighborhood, setNeighborhood] = useState(defaultAddr?.neighborhood || '');
+  const [city, setCity] = useState(defaultAddr?.city || '');
+  const [state, setState] = useState(defaultAddr?.state || '');
+  const [validatedCep, setValidatedCep] = useState('');
+  const [isLookingUpCep, setIsLookingUpCep] = useState(false);
+  const [cepLookupError, setCepLookupError] = useState('');
+  useEffect(() => {
+    // Prevent showing a server quote for a different cart/CEP/shipping option.
+    setServerCartResult(null);
+  }, [cart, zipCode, selectedShipping?.id, appliedCoupon]);
+
 
   // Credit Card Form
   const [cardNumber, setCardNumber] = useState('4532 •••• •••• 8892');
@@ -104,13 +131,196 @@ export const CheckoutModal: React.FC = () => {
   const orderTotal = Math.max(0, cartSubtotal - discountAmount + finalShippingPrice);
 
   const handleCepSearch = async () => {
-    if (zipCode.length >= 8) {
-      await calculateShipping(zipCode);
+    const cleanCep = zipCode.replace(/\D/g, '');
+    setValidatedCep('');
+    setCepLookupError('');
+    if (cleanCep.length !== 8) {
+      setCepLookupError('Informe um CEP válido com 8 dígitos.');
+      return;
+    }
+    setIsLookingUpCep(true);
+    try {
+      const response = await fetch('/api/address/lookup?cep=' + cleanCep, { cache: 'no-store' });
+      const address = await response.json();
+      if (!response.ok) throw new Error(address.error || 'CEP não encontrado.');
+      // Clear previously entered street data if ViaCEP only resolves city/UF.
+      setStreet(address.street || '');
+      setNeighborhood(address.neighborhood || '');
+      setCity(address.city || '');
+      setState(address.state || '');
+      setNumber('');
+      setComplement('');
+      setValidatedCep(cleanCep);
+      if (!address.street) {
+        showToast('CEP localizado. Preencha a rua, bairro e número se necessário.', 'info');
+      }
+      await calculateShipping(cleanCep);
+    } catch (err) {
+      setValidatedCep('');
+      const msg = err instanceof Error ? err.message : 'Falha ao consultar CEP.';
+      setCepLookupError(msg);
+      showToast(msg, 'error');
+    } finally {
+      setIsLookingUpCep(false);
+    }
+  };
+
+  const handleValidateCart = async () => {
+    setIsCheckingCart(true);
+    setServerCartResult(null);
+    try {
+      const response = await fetch('/api/checkout/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          items: cart.map(item => ({
+            ...(item.isKit ? { kitId: item.kitId } : { productId: item.productId }),
+            quantity: item.quantity
+          })),
+          ...(selectedShipping && validatedCep === zipCode.replace(/\D/g, '')
+            ? { cep: validatedCep, shippingId: selectedShipping.id }
+            : {}),
+          coupon: appliedCoupon || null
+        }),
+        cache: 'no-store'
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || result.validated !== true) {
+        setServerCartResult({
+          validated: false,
+          message: typeof result.error === 'string' ? result.error : 'Não foi possível validar este carrinho.'
+        });
+        return;
+      }
+      setServerCartResult({
+        validated: true,
+        subtotal: result.subtotal,
+        total: result.total,
+        discount: result.discount,
+        shipping: result.shipping,
+        couponStatus: result.couponStatus,
+        lines: result.lines,
+        message: typeof result.message === 'string' ? result.message : 'Catálogo validado pelo servidor.'
+      });
+    } catch {
+      setServerCartResult({ validated: false, message: 'Falha de conexão durante a validação.' });
+    } finally {
+      setIsCheckingCart(false);
+    }
+  };
+
+  const handleVerifyTestPayment = async () => {
+    setVerifyTestPaymentResult(null);
+    if (currentUser?.role !== 'admin') return;
+    if (!/^PLS-[0-9A-F]{24}$/.test(verifyTestOrderNumber.trim()) ||
+        !/^\d{7,24}$/.test(verifyTestPaymentId.trim())) {
+      setVerifyTestPaymentResult({ ok: false,
+        message: 'Informe o número do pedido PLS-... e o ID numérico do pagamento de TESTE.' });
+      return;
+    }
+    setIsVerifyingTestPayment(true);
+    try {
+      const { getSupabaseClient } = await import('../lib/supabase');
+      const client = getSupabaseClient();
+      const { data: { session } } = client
+        ? await client.auth.getSession() : { data: { session: null } };
+      if (!session?.access_token) throw Error('Faça login novamente como administrador.');
+      const response = await fetch('/api/mercadopago/create-preference', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + session.access_token,
+          'Content-Type': 'application/json'
+        },
+        cache: 'no-store',
+        body: JSON.stringify({
+          action: 'verify_test_payment',
+          orderNumber: verifyTestOrderNumber.trim(),
+          paymentId: verifyTestPaymentId.trim()
+        })
+      });
+      const result = await response.json().catch(() => ({}));
+      setVerifyTestPaymentResult({
+        ok: response.ok && result.success === true,
+        message: result.message || result.error || 'A API não retornou um resultado válido.',
+        checks: result.checks && typeof result.checks === 'object' ? result.checks : undefined
+      });
+    } catch {
+      setVerifyTestPaymentResult({
+        ok: false, message: 'Não foi possível consultar o Mercado Pago neste momento.'
+      });
+    } finally {
+      setIsVerifyingTestPayment(false);
+    }
+  };
+
+  const handleCreateTestOrder = async (action: 'stage_order' | 'create_test_preference') => {
+    setTestOrderResult(null);
+    if (currentUser?.role !== 'admin') return;
+    if (!selectedShipping || validatedCep !== zipCode.replace(/\D/g, '') ||
+        !fullName.trim() || !email.trim() || !cpf.trim() || !whatsapp.trim() ||
+        !street.trim() || !number.trim() || !neighborhood.trim() ||
+        !city.trim() || !state.trim()) {
+      setTestOrderResult({ success: false, message: 'Preencha e valide endereço, comprador e frete para o teste.' });
+      return;
+    }
+    if (appliedCoupon) {
+      setTestOrderResult({ success: false, message: 'Retire o cupom no carrinho: descontos ainda não estão autorizados no servidor.' });
+      return;
+    }
+    setIsCreatingTestOrder(true);
+    try {
+      const { getSupabaseClient } = await import('../lib/supabase');
+      const client = getSupabaseClient();
+      const { data: { session } } = client ? await client.auth.getSession() :
+        { data: { session: null } };
+      if (!session?.access_token) throw Error('Entre novamente como administrador.');
+      const idempotencyKey = testOrderKey || crypto.randomUUID();
+      if (!testOrderKey) setTestOrderKey(idempotencyKey);
+      const response = await fetch('/api/mercadopago/create-preference', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + session.access_token,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          action, idempotencyKey,
+          items: cart.map(item => ({
+            ...(item.isKit ? { kitId: item.kitId } : { productId: item.productId }),
+            quantity: item.quantity
+          })),
+          cep: validatedCep, shippingId: selectedShipping.id,
+          customer: { fullName, email, phone: whatsapp, cpf },
+          address: {
+            zipCode: validatedCep, street, number, complement,
+            neighborhood, city, state
+          }
+        }),
+        cache: 'no-store'
+      });
+      const result = await response.json().catch(() => ({}));
+      setTestOrderResult({
+        success: response.ok && result.success === true,
+        message: result.message || result.error || 'Servidor não retornou o resultado.',
+        orderNumber: result.orderNumber,
+        reused: result.reused,
+        checkoutUrl: result.checkoutUrl,
+        paymentStatus: result.paymentStatus
+      });
+    } catch (err) {
+      setTestOrderResult({
+        success: false, message: err instanceof Error ? err.message : 'Falha no teste do pedido.'
+      });
+    } finally {
+      setIsCreatingTestOrder(false);
     }
   };
 
   const handlePlaceOrder = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (validatedCep !== zipCode.replace(/\D/g, '') || !street.trim() || !neighborhood.trim() || !city.trim() || !state.trim()) {
+      showToast('Consulte o CEP e confirme rua, bairro, cidade, UF e número antes de continuar.', 'error');
+      return;
+    }
     if (!fullName || !email || !cpf || !whatsapp || !street || !number) {
       showToast('Por favor preencha todos os campos obrigatórios.', 'error');
       return;
@@ -276,7 +486,7 @@ export const CheckoutModal: React.FC = () => {
                 {step === 'error' && 'Erro no Processamento'}
               </h3>
               <p className="text-xs text-slate-400">
-                Pulsar Tecnologia • Ambiente Criptografado 256 bits
+                Pulsar Tecnologia • Prévia de checkout (sem cobrança)
               </p>
             </div>
           </div>
@@ -381,18 +591,35 @@ export const CheckoutModal: React.FC = () => {
                             required
                             maxLength={9}
                             value={zipCode}
-                            onChange={(e) => setZipCode(e.target.value)}
+                            onChange={(e) => {
+                              setZipCode(e.target.value);
+                              setValidatedCep('');
+                              setCepLookupError('');
+                              setStreet('');
+                              setNumber('');
+                              setComplement('');
+                              setNeighborhood('');
+                              setCity('');
+                              setState('');
+                              setSelectedShipping(null);
+                            }}
                             className="w-full bg-[#181820] text-xs text-white px-3.5 py-2.5 rounded-xl border border-white/10 focus:outline-none focus:border-[#FF5500]"
                           />
                           <button
                             type="button"
                             onClick={handleCepSearch}
-                            className="px-3 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition flex items-center gap-1"
+                            disabled={isLookingUpCep || isCalculatingShipping}
+                            className="px-3 rounded-xl bg-white/10 hover:bg-white/20 disabled:opacity-50 text-white text-xs font-bold transition flex items-center gap-1"
                           >
                             <Truck className="w-3.5 h-3.5" />
-                            <span>{isCalculatingShipping ? '...' : 'Calcular'}</span>
+                            <span>{isCalculatingShipping || isLookingUpCep ? '...' : 'Calcular'}</span>
                           </button>
                         </div>
+                        {cepLookupError && <p className="mt-1 text-[11px] text-red-400">{cepLookupError}</p>}
+                        {validatedCep && !cepLookupError &&
+                          <p className="mt-1 text-[11px] text-emerald-400">
+                            CEP localizado: {city} - {state}. Confirme rua, bairro e número.
+                          </p>}
                       </div>
 
                       <div className="sm:col-span-6">
@@ -677,106 +904,130 @@ export const CheckoutModal: React.FC = () => {
                           <span>Redirecionamento Seguro Mercado Pago</span>
                         </div>
                         <p className="text-[11px] text-slate-400 leading-relaxed">
-                          Ao clicar no botão abaixo, geramos a transação criptografada com suas credenciais oficiais e você será <strong>redirecionado automaticamente para a página de pagamento do Mercado Pago</strong>.
+                          O checkout hospedado do Mercado Pago será habilitado depois de verificar preços, frete, pedidos e webhooks no servidor. Nenhuma cobrança será criada neste Preview.
                         </p>
                       </div>
                     )}
 
-                    {/* Credit Card Inputs */}
+                    {/* Card data must only be collected by a PCI-compliant
+                        Mercado Pago hosted checkout, never a custom form. */}
                     {paymentMethod === 'credit_card' && (
-                      <div className="p-4 rounded-xl bg-white/5 border border-white/10 space-y-3 text-xs">
-                        <div>
-                          <label className="text-[11px] text-slate-400 font-semibold block mb-1">
-                            Número do Cartão:
-                          </label>
-                          <input
-                            type="text"
-                            value={cardNumber}
-                            onChange={(e) => setCardNumber(e.target.value)}
-                            className="w-full bg-[#181820] text-xs text-white px-3 py-2 rounded-lg border border-white/10 focus:outline-none focus:border-[#FF5500]"
-                          />
-                        </div>
+                      <div className="p-4 rounded-xl bg-amber-950/30 border border-amber-500/30 text-xs text-amber-200">
+                        Pagamento por cartão será disponibilizado pelo checkout hospedado do Mercado Pago.
+                        Não informe dados do cartão nesta página.
+                      </div>
+                    )}
 
-                        <div>
-                          <label className="text-[11px] text-slate-400 font-semibold block mb-1">
-                            Nome Impresso no Cartão:
-                          </label>
-                          <input
-                            type="text"
-                            value={cardHolder}
-                            onChange={(e) => setCardHolder(e.target.value.toUpperCase())}
-                            className="w-full bg-[#181820] text-xs text-white px-3 py-2 rounded-lg border border-white/10 focus:outline-none focus:border-[#FF5500]"
-                          />
+                    {/* Read-only server validation: no customer data or payment action. */}
+                    <div className="rounded-xl border border-white/10 bg-black/25 p-3 space-y-3">
+                      <button type="button" onClick={handleValidateCart} disabled={isCheckingCart || !cart.length}
+                        className="w-full rounded-xl border border-blue-400/40 bg-blue-500/15 text-blue-200 p-3 text-xs font-bold disabled:opacity-50">
+                        {isCheckingCart ? 'Validando catálogo...' : 'Verificar preços e estoque no servidor (sem pagamento)'}
+                      </button>
+                      {serverCartResult && (
+                        <div className={`rounded-lg border p-3 text-xs ${serverCartResult.validated
+                          ? 'border-emerald-500/30 text-emerald-300 bg-emerald-950/20'
+                          : 'border-red-500/30 text-red-300 bg-red-950/20'}`}>
+                          <p>{serverCartResult.message}</p>
+                          {serverCartResult.validated && typeof serverCartResult.subtotal === 'number' && (
+                            <p className="font-bold mt-2">
+                              Subtotal confirmado pelo Supabase: R$ {serverCartResult.subtotal.toFixed(2)}
+                            </p>
+                          )}
+                          {serverCartResult.validated && serverCartResult.shipping && (
+                            <>
+                              <p className="mt-1">
+                                Frete recalculado ({serverCartResult.shipping.carrier} — {serverCartResult.shipping.service}):
+                                R$ {serverCartResult.shipping.price.toFixed(2)}
+                              </p>
+                              <p className="mt-1 font-bold">
+                                Total preliminar calculado no servidor: R$ {serverCartResult.total?.toFixed(2)}
+                              </p>
+                            </>
+                          )}
+                          {serverCartResult.validated && (
+                            <p className="mt-2 text-slate-400">
+                              {serverCartResult.couponStatus === 'not_yet_authorized'
+                                ? 'Cupom exibido no carrinho ainda não está autorizado no servidor e não foi descontado. '
+                                : ''}
+                              {serverCartResult.shipping
+                                ? 'Total apenas para testes: embalagem e frete final ainda exigem confirmação.'
+                                : 'Informe e calcule o CEP, selecione um frete e valide novamente para obter um total.'}
+                              {' '}Nenhum pedido ou cobrança foi criado.
+                            </p>
+                          )}
                         </div>
+                      )}
+                    </div>
 
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="text-[11px] text-slate-400 font-semibold block mb-1">
-                              Validade (MM/AA):
-                            </label>
-                            <input
-                              type="text"
-                              value={cardExpiry}
-                              onChange={(e) => setCardExpiry(e.target.value)}
-                              className="w-full bg-[#181820] text-xs text-white px-3 py-2 rounded-lg border border-white/10 focus:outline-none focus:border-[#FF5500]"
-                            />
+                    {currentUser?.role === 'admin' && (
+                      <div className="p-3 space-y-3 rounded-xl border border-purple-500/40 bg-purple-950/20 text-xs">
+                        <p className="font-bold text-purple-200">Ferramentas do administrador — somente Preview</p>
+                        <p className="text-slate-400">O primeiro botão registra um pedido pendente no Supabase, sem cobrança nem reserva de estoque. Use somente dados de teste.</p>
+                        <button type="button" disabled={isCreatingTestOrder}
+                          onClick={() => void handleCreateTestOrder('stage_order')}
+                          className="w-full bg-purple-600/30 border border-purple-400/50 text-purple-100 p-3 rounded-lg font-bold disabled:opacity-50">
+                          {isCreatingTestOrder ? 'Processando...' : 'Criar pedido pendente de TESTE (sem pagamento)'}
+                        </button>
+                        <button type="button" disabled={isCreatingTestOrder}
+                          onClick={() => void handleCreateTestOrder('create_test_preference')}
+                          className="w-full bg-blue-600/20 border border-blue-400/40 text-blue-100 p-3 rounded-lg font-bold disabled:opacity-50">
+                          Criar preferência com vendedor de TESTE (quando habilitado)
+                        </button>
+                        <div className="rounded-lg border border-emerald-500/30 bg-emerald-950/15 p-3 space-y-2">
+                          <p className="text-emerald-200 font-bold">Recuperar confirmação de pagamento de TESTE</p>
+                          <p className="text-slate-400">Consulta o pagamento diretamente no Mercado Pago. Apenas confirma se vendedor, preferência, valor, status e pedido corresponderem. Não realiza nova cobrança.</p>
+                          <input type="text" aria-label="Número do pedido de teste" placeholder="Número do pedido: PLS-..."
+                            value={verifyTestOrderNumber} onChange={e => setVerifyTestOrderNumber(e.target.value.toUpperCase())}
+                            className="w-full p-2 rounded-lg border border-white/20 bg-slate-900 text-white" />
+                          <input type="text" inputMode="numeric" aria-label="ID do pagamento de teste"
+                            placeholder="ID numérico do pagamento" value={verifyTestPaymentId}
+                            onChange={e => setVerifyTestPaymentId(e.target.value.replace(/\D/g,''))}
+                            className="w-full p-2 rounded-lg border border-white/20 bg-slate-900 text-white" />
+                          <button type="button" disabled={isVerifyingTestPayment}
+                            onClick={() => void handleVerifyTestPayment()}
+                            className="w-full rounded-lg border border-emerald-400/40 bg-emerald-600/25 p-3 font-bold text-emerald-100 disabled:opacity-50">
+                            {isVerifyingTestPayment ? 'Conferindo com Mercado Pago...' : 'Verificar pagamento aprovado no Mercado Pago'}
+                          </button>
+                          {verifyTestPaymentResult && (
+                            <p className={verifyTestPaymentResult.ok ? 'text-emerald-300' : 'text-amber-300'}>
+                              {verifyTestPaymentResult.message}
+                            </p>
+                          )}
+                          {verifyTestPaymentResult?.checks && (
+                            <div className="space-y-1 text-xs">
+                              {Object.entries(verifyTestPaymentResult.checks).map(([name, ok]) => (
+                                <p key={name} className={ok ? 'text-emerald-300' : 'text-amber-300'}>
+                                  {ok ? 'OK' : 'Pendente'} — {name}
+                                </p>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <button type="button" onClick={() => { setTestOrderKey(null); setTestOrderResult(null); }}
+                          className="text-slate-300 underline">Nova tentativa de teste</button>
+                        {testOrderResult && (
+                          <div className={testOrderResult.success ? 'text-emerald-300' : 'text-amber-300'}>
+                            <p>{testOrderResult.message}</p>
+                            {testOrderResult.orderNumber && <p>Pedido: {testOrderResult.orderNumber}</p>}
+                            {testOrderResult.checkoutUrl && (
+                              <a target="_blank" rel="noopener noreferrer" href={testOrderResult.checkoutUrl}
+                                className="underline block mt-2">Abrir Checkout Pro de TESTE</a>
+                            )}
                           </div>
-
-                          <div>
-                            <label className="text-[11px] text-slate-400 font-semibold block mb-1">
-                              CVV:
-                            </label>
-                            <input
-                              type="text"
-                              value={cardCvv}
-                              maxLength={4}
-                              onChange={(e) => setCardCvv(e.target.value)}
-                              className="w-full bg-[#181820] text-xs text-white px-3 py-2 rounded-lg border border-white/10 focus:outline-none focus:border-[#FF5500]"
-                            />
-                          </div>
-                        </div>
-
-                        <div>
-                          <label className="text-[11px] text-slate-400 font-semibold block mb-1">
-                            Número de Parcelas:
-                          </label>
-                          <select
-                            value={installments || 1}
-                            onChange={(e) => setInstallments(parseInt(e.target.value, 10) || 1)}
-                            className="w-full bg-[#181820] text-xs text-white px-3 py-2 rounded-lg border border-white/10 focus:outline-none focus:border-[#FF5500]"
-                          >
-                            <option value={1}>1x de R$ {orderTotal.toFixed(2)} (sem juros)</option>
-                            <option value={2}>2x de R$ {(orderTotal / 2).toFixed(2)} (sem juros)</option>
-                            <option value={3}>3x de R$ {(orderTotal / 3).toFixed(2)} (sem juros)</option>
-                            <option value={6}>6x de R$ {(orderTotal / 6 * 1.03).toFixed(2)}</option>
-                            <option value={12}>12x de R$ {(orderTotal / 12 * 1.06).toFixed(2)}</option>
-                          </select>
-                        </div>
+                        )}
                       </div>
                     )}
 
                     {/* Submit Button */}
                     <button
                       type="submit"
-                      disabled={isSubmitting}
-                      className="w-full py-4 rounded-2xl bg-gradient-to-r from-[#FF5500] to-[#FFAA00] text-black font-black text-sm shadow-xl shadow-[#FF5500]/30 hover:shadow-[#FF5500]/50 hover:scale-[1.01] active:scale-95 transition flex items-center justify-center gap-2 disabled:opacity-50"
+                      disabled
+                      title="Checkout bloqueado até finalizar a validação de preços, estoque, frete e webhooks no servidor."
+                      className="w-full py-4 rounded-2xl bg-slate-700 text-slate-200 font-black text-sm opacity-80 cursor-not-allowed transition flex items-center justify-center gap-2"
                     >
-                      {isSubmitting ? (
-                        <>
-                          <Loader2 className="w-4 h-4 animate-spin text-black" />
-                          <span>Conectando ao Mercado Pago...</span>
-                        </>
-                      ) : paymentMethod === 'mercadopago' ? (
-                        <>
-                          <ExternalLink className="w-4 h-4 text-black" />
-                          <span>Pagar com Mercado Pago (R$ {orderTotal.toFixed(2)})</span>
-                        </>
-                      ) : (
-                        <>
-                          <Lock className="w-4 h-4 text-black" />
-                          <span>Confirmar Pedido de R$ {orderTotal.toFixed(2)}</span>
-                        </>
-                      )}
+                      <Lock className="w-4 h-4" />
+                      <span>Pagamento indisponível — integração em validação</span>
                     </button>
                   </div>
                 </div>

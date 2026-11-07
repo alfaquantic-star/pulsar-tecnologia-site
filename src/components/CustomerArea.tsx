@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   Package, 
   MapPin, 
@@ -15,12 +15,12 @@ import {
   LogOut
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
-import { Address } from '../types';
+import { Address, Order } from '../types';
+import { fetchCustomerOrdersFromSupabase } from '../lib/supabase';
 
 export const CustomerArea: React.FC = () => {
   const { 
     currentUser, 
-    orders, 
     setCurrentView, 
     logout, 
     updateUserProfile, 
@@ -31,6 +31,36 @@ export const CustomerArea: React.FC = () => {
 
   const [activeTab, setActiveTab] = useState<'orders' | 'addresses' | 'profile'>('orders');
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
+  const [privateOrders, setPrivateOrders] = useState<Order[]>([]);
+  const [historyState, setHistoryState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [refreshVersion, setRefreshVersion] = useState(0);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    setPrivateOrders([]);
+    setLastUpdated(null);
+    if (!currentUser || currentUser.role !== 'customer') {
+      setHistoryState('ready');
+      return () => { active = false; };
+    }
+    setHistoryState('loading');
+    // Token is verified server-side; this client never supplies order owner IDs/emails.
+    void fetchCustomerOrdersFromSupabase().then(result => {
+      if (!active) return;
+      if (!result) {
+        setHistoryState('error');
+        return;
+      }
+      // Defend against accidentally showing unverified/other-customer rows.
+      setPrivateOrders(result.filter(order => order.customerId === currentUser.id));
+      setLastUpdated(new Date());
+      setHistoryState('ready');
+    }).catch(() => {
+      if (active) setHistoryState('error');
+    });
+    return () => { active = false; };
+  }, [currentUser?.id, currentUser?.role, refreshVersion]);
   const [showNewAddressModal, setShowNewAddressModal] = useState(false);
 
   // New address form
@@ -71,10 +101,9 @@ export const CustomerArea: React.FC = () => {
     );
   }
 
-  // Filter orders strictly for the current customer (isolamento entre contas)
-  const myOrders = orders.filter(
-    (o) => o.customerId === currentUser.id || o.customerEmail.toLowerCase() === currentUser.email.toLowerCase()
-  );
+  // The server only returns orders linked to this verified Supabase Auth UUID.
+  // Guest/legacy orders are intentionally not accessible via email equality.
+  const myOrders = privateOrders;
 
   const selectedOrder = selectedOrderId ? myOrders.find((o) => o.id === selectedOrderId) : myOrders[0];
 
@@ -113,8 +142,8 @@ export const CustomerArea: React.FC = () => {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl sm:text-2xl font-black text-white">{currentUser.fullName}</h1>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold border border-emerald-500/30">
-                Cliente Verificado
+              <span className="text-[10px] px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 font-bold border border-amber-500/30">
+                Cadastro local — não verificado
               </span>
             </div>
             <p className="text-xs text-slate-400 mt-0.5">{currentUser.email} • {currentUser.whatsapp}</p>
@@ -180,12 +209,37 @@ export const CustomerArea: React.FC = () => {
       {/* Content Area */}
       {activeTab === 'orders' && (
         <div className="space-y-6">
-          {myOrders.length === 0 ? (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-xs text-slate-400" aria-live="polite">
+              {historyState === 'loading'
+                ? 'Buscando histórico seguro...'
+                : lastUpdated && historyState === 'ready'
+                  ? 'Atualizado às ' + lastUpdated.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+                  : 'Histórico ainda não atualizado'}
+            </p>
+            <button
+              type="button"
+              disabled={historyState === 'loading'}
+              onClick={() => setRefreshVersion(version => version + 1)}
+              className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold border border-white/10"
+            >
+              {historyState === 'loading' ? 'Consultando...' : 'Atualizar pedidos'}
+            </button>
+          </div>
+          {historyState === 'loading' ? (
+            <div role="status" className="p-7 rounded-xl border border-white/10 text-slate-300 text-sm">
+              Carregando pedidos vinculados à sua conta autenticada...
+            </div>
+          ) : historyState === 'error' ? (
+            <div role="alert" className="p-7 rounded-xl border border-amber-400/30 text-amber-200 text-sm">
+              Não foi possível consultar seus pedidos com segurança. Clique em “Atualizar pedidos” para tentar novamente.
+            </div>
+          ) : myOrders.length === 0 ? (
             <div className="p-12 rounded-3xl bg-[#14141B] border border-white/5 text-center space-y-3">
               <Package className="w-12 h-12 text-slate-600 mx-auto" />
-              <h3 className="text-base font-bold text-white">Você ainda não possui pedidos</h3>
+              <h3 className="text-base font-bold text-white">Nenhum pedido vinculado a esta conta</h3>
               <p className="text-xs text-slate-400 max-w-sm mx-auto">
-                Adquira sua placa inteligente com NFC e comece a impulsionar suas avaliações no Google hoje mesmo.
+                Pedidos antigos ou feitos como convidado não aparecem automaticamente. A vinculação segura desses pedidos ainda está em desenvolvimento.
               </p>
               <button
                 onClick={() => setCurrentView('combos')}

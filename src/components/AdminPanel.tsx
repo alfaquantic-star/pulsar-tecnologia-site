@@ -186,6 +186,61 @@ export const AdminPanel: React.FC = () => {
   const [apiTestSuccess, setApiTestSuccess] = useState<{ mp?: boolean; me?: boolean }>({});
   const [isTestingMp, setIsTestingMp] = useState(false);
   const [mpTestResult, setMpTestResult] = useState<{ success: boolean; message: string; user?: any } | null>(null);
+  const [isTestingMelhorEnvio, setIsTestingMelhorEnvio] = useState(false);
+  const [melhorEnvioTestResult, setMelhorEnvioTestResult] = useState<{ success: boolean; message: string; environment?: string; availableOptions?: number } | null>(null);
+  const [isCheckingCheckout, setIsCheckingCheckout] = useState(false);
+  const [isCheckingWebhook, setIsCheckingWebhook] = useState(false);
+  const [isProbingWebhook, setIsProbingWebhook] = useState(false);
+  const [webhookProbe, setWebhookProbe] = useState<{
+    success?: boolean;
+    routeHttpStatus?: number;
+    webhookSignatureAccepted?: boolean;
+    databaseDiagnosticRecorded?: boolean;
+    databaseDiagnosticSignatureVerified?: boolean;
+    diagnosticDbErrorCode?: string | null;
+    possibleVercelProtection?: boolean;
+    responseIsJson?: boolean;
+    supabaseHttpStatus?: number | null;
+    supabaseSignatureAccepted?: boolean;
+    signatureSecretsConsistent?: boolean;
+    target?: string;
+    message?: string; error?: string;
+  } | null>(null);
+  const [webhookDiagnostics, setWebhookDiagnostics] = useState<{
+    recorded: boolean;
+    diagnostics: null | {
+      last_attempt_at: string;
+      signature_header_present: boolean;
+      request_id_header_present: boolean;
+      query_data_id_present: boolean;
+      body_data_id_present: boolean;
+      signature_format_valid: boolean;
+      signature_verified: boolean;
+    };
+    message: string;
+  } | null>(null);
+  const [isProcessingQueuedPayment, setIsProcessingQueuedPayment] = useState(false);
+  const [queueProcessResult, setQueueProcessResult] = useState<{
+    checked?:boolean; verified?:boolean; orderUpdated?:boolean;
+    alreadyApproved?:boolean; queuedEventCompleted?:boolean; message?:string;
+  } | null>(null);
+  const [isVerifyingQueuedPayment, setIsVerifyingQueuedPayment] = useState(false);
+  const [queuedPaymentVerification, setQueuedPaymentVerification] = useState<{
+    checked?: boolean; verified?: boolean; reason?: string; message?: string;
+  } | null>(null);
+  const [isCheckingWebhookInbox, setIsCheckingWebhookInbox] = useState(false);
+  const [webhookInbox, setWebhookInbox] = useState<{
+    checked: boolean;
+    recentCount: number;
+    queuedCount: number;
+    latestReceivedAt: string | null;
+    message: string;
+  } | null>(null);
+  const [checkoutReadiness, setCheckoutReadiness] = useState<{
+    readyForPayments: boolean;
+    checks: Record<string, boolean>;
+    message: string;
+  } | null>(null);
 
   // Metrics
   const totalRevenue = orders
@@ -469,32 +524,30 @@ export const AdminPanel: React.FC = () => {
       logoUrl: cmsLogoUrl,
       heroImageUrl: cmsHeroImageUrl
     });
-    showToast('Alterações visuais e textos publicados no site oficial!', 'success');
+    // The StoreContext emits success only after the protected Supabase API
+    // has confirmed persistence. The button itself must not claim success.
+    // Fields not stored in site_settings still require a separate migration.
   };
 
   const handleSaveApiSettings = () => {
+    // Public store configuration only. Private tokens are configured in
+    // Vercel server environment variables, never stored via CMS/browser.
     updateSettings({
       originCep: cmsOriginCep,
-      mercadoPagoPublicKey: cmsMercadoPagoKey,
-      mercadoPagoAccessToken: cmsMercadoPagoToken,
-      mercadoPagoSandbox: cmsMercadoPagoSandbox,
-      melhorEnvioToken: cmsMelhorEnvioToken,
-      melhorEnvioClientId: cmsMelhorEnvioClientId,
-      melhorEnvioClientSecret: cmsMelhorEnvioClientSecret,
-      melhorEnvioSandbox: cmsMelhorEnvioSandbox
+      mercadoPagoPublicKey: cmsMercadoPagoKey
     });
-    showToast('Credenciais de API Mercado Pago e Melhor Envio salvas com sucesso!', 'success');
+    setCmsMercadoPagoToken('');
+    setCmsMelhorEnvioToken('');
+    setCmsMelhorEnvioClientSecret('');
+    showToast('Somente CEP de origem e chave pública foram enviados. Tokens privados devem ser configurados na Vercel (Environment Variables).', 'info');
   };
 
   const handleTestMercadoPago = async () => {
-    if (!cmsMercadoPagoToken.trim()) {
-      showToast('Por favor, informe o Access Token do Mercado Pago antes de testar.', 'error');
-      return;
-    }
+    // No tokens from browser forms. Server env owns MERCADO_PAGO_ACCESS_TOKEN.
     setIsTestingMp(true);
     setMpTestResult(null);
     try {
-      const res = await testMercadoPagoConnection(cmsMercadoPagoToken);
+      const res = await testMercadoPagoConnection();
       setMpTestResult(res);
       if (res.success) {
         showToast('Conexão com o Mercado Pago validada com sucesso!', 'success');
@@ -509,6 +562,217 @@ export const AdminPanel: React.FC = () => {
       showToast('Falha no teste do Mercado Pago', 'error');
     } finally {
       setIsTestingMp(false);
+    }
+  };
+
+  const handleCheckCheckoutReadiness = async () => {
+    setIsCheckingCheckout(true);
+    setCheckoutReadiness(null);
+    try {
+      const { getSupabaseClient } = await import('../lib/supabase');
+      const client = getSupabaseClient();
+      const { data: { session } } = client
+        ? await client.auth.getSession()
+        : { data: { session: null } };
+      if (!session?.access_token) {
+        showToast('Entre novamente como administrador.', 'error');
+        return;
+      }
+      const response = await fetch('/api/admin/me?check=checkout', {
+        headers: { Authorization: 'Bearer ' + session.access_token },
+        cache: 'no-store'
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || !result.checks) {
+        showToast(result.error || 'Falha ao verificar prontidão do checkout.', 'error');
+        return;
+      }
+      setCheckoutReadiness(result);
+    } catch {
+      showToast('Falha na consulta de prontidão do checkout.', 'error');
+    } finally {
+      setIsCheckingCheckout(false);
+    }
+  };
+
+  const handleWebhookSelfTest = async () => {
+    setIsProbingWebhook(true);
+    setWebhookProbe(null);
+    try {
+      const { getSupabaseClient } = await import('../lib/supabase');
+      const client = getSupabaseClient();
+      const { data: { session } } = client
+        ? await client.auth.getSession() : { data: { session: null } };
+      if (!session?.access_token) {
+        showToast('Entre novamente como administrador.', 'error');
+        return;
+      }
+      const response = await fetch('/api/admin/me?check=webhook_probe', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + session.access_token },
+        cache: 'no-store'
+      });
+      const result = await response.json().catch(() => ({}));
+      setWebhookProbe({
+        ...result, success: response.ok && result.success === true
+      });
+    } catch {
+      setWebhookProbe({ success:false, error:'Falha de conexão com o autoteste interno.' });
+    } finally { setIsProbingWebhook(false); }
+  };
+
+  const handleProcessQueuedPayment = async () => {
+    setIsProcessingQueuedPayment(true);
+    setQueueProcessResult(null);
+    try {
+      const { getSupabaseClient } = await import('../lib/supabase');
+      const client = getSupabaseClient();
+      const { data: { session } } = client
+        ? await client.auth.getSession() : { data: { session: null } };
+      if (!session?.access_token) {
+        showToast('Entre novamente como administrador.', 'error');
+        return;
+      }
+      const response = await fetch('/api/admin/me?check=webhook_queue_process', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + session.access_token },
+        cache: 'no-store'
+      });
+      const result = await response.json().catch(() => ({}));
+      setQueueProcessResult({
+        ...result,
+        message: result.message || result.error || `Falha HTTP ${response.status}.`,
+        verified: response.ok && result.verified === true
+      });
+    } catch {
+      setQueueProcessResult({ checked:false,verified:false,
+        message:'Falha de conexão ao processar evento de teste.' });
+    } finally {
+      setIsProcessingQueuedPayment(false);
+    }
+  };
+
+  const handleVerifyQueuedPayment = async () => {
+    setIsVerifyingQueuedPayment(true);
+    setQueuedPaymentVerification(null);
+    try {
+      const { getSupabaseClient } = await import('../lib/supabase');
+      const client = getSupabaseClient();
+      const { data: { session } } = client
+        ? await client.auth.getSession() : { data: { session: null } };
+      if (!session?.access_token) {
+        showToast('Entre novamente como administrador.', 'error');
+        return;
+      }
+      const response = await fetch('/api/admin/me?check=webhook_queue_verify', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + session.access_token },
+        cache: 'no-store'
+      });
+      const result = await response.json().catch(() => ({}));
+      setQueuedPaymentVerification({
+        ...result,
+        message: result.message || result.error || (result.code === 'server_auth_provider_error' ? 'Erro interno de verificação. Verifique os logs da Vercel.' : `Verificação indisponível (HTTP ${response.status}).`),
+        verified: response.ok && result.verified === true
+      });
+    } catch {
+      setQueuedPaymentVerification({ checked:false, verified:false,
+        message:'Falha ao verificar pagamento de teste.' });
+    } finally {
+      setIsVerifyingQueuedPayment(false);
+    }
+  };
+
+  const handleCheckWebhookInbox = async () => {
+    setIsCheckingWebhookInbox(true);
+    setWebhookInbox(null);
+    try {
+      const { getSupabaseClient } = await import('../lib/supabase');
+      const client = getSupabaseClient();
+      const { data: { session } } = client
+        ? await client.auth.getSession()
+        : { data: { session: null } };
+      if (!session?.access_token) {
+        showToast('Entre novamente como administrador.', 'error');
+        return;
+      }
+      const response = await fetch('/api/admin/me?check=webhook_inbox', {
+        headers: { Authorization: 'Bearer ' + session.access_token },
+        cache: 'no-store'
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        showToast(result.error || 'Fila de webhook indisponível.', 'error');
+        return;
+      }
+      setWebhookInbox(result);
+    } catch {
+      showToast('Falha ao consultar a fila de notificações.', 'error');
+    } finally {
+      setIsCheckingWebhookInbox(false);
+    }
+  };
+
+  const handleCheckWebhookDiagnostics = async () => {
+    setIsCheckingWebhook(true);
+    setWebhookDiagnostics(null);
+    try {
+      const { getSupabaseClient } = await import('../lib/supabase');
+      const client = getSupabaseClient();
+      const { data: { session } } = client
+        ? await client.auth.getSession()
+        : { data: { session: null } };
+      if (!session?.access_token) {
+        showToast('Entre novamente como administrador.', 'error');
+        return;
+      }
+      const response = await fetch('/api/admin/me?check=webhook', {
+        headers: { Authorization: 'Bearer ' + session.access_token },
+        cache: 'no-store'
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        showToast(result.error || 'Diagnóstico de webhook indisponível.', 'error');
+        return;
+      }
+      setWebhookDiagnostics(result);
+    } catch {
+      showToast('Falha ao consultar o webhook.', 'error');
+    } finally {
+      setIsCheckingWebhook(false);
+    }
+  };
+
+  const handleTestMelhorEnvio = async () => {
+    setIsTestingMelhorEnvio(true);
+    setMelhorEnvioTestResult(null);
+    try {
+      const { getSupabaseClient } = await import('../lib/supabase');
+      const client = getSupabaseClient();
+      const { data: { session } } = client
+        ? await client.auth.getSession()
+        : { data: { session: null } };
+      if (!session?.access_token) {
+        setMelhorEnvioTestResult({ success: false, message: 'Entre novamente como administrador.' });
+        return;
+      }
+      const response = await fetch('/api/shipping/test-connection', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + session.access_token, 'Content-Type': 'application/json' },
+        body: '{}',
+        cache: 'no-store'
+      });
+      const result = await response.json().catch(() => ({}));
+      setMelhorEnvioTestResult({
+        success: response.ok && result.success === true,
+        message: typeof result.message === 'string' ? result.message : 'Falha no teste do Melhor Envio.',
+        environment: result.environment,
+        availableOptions: result.availableOptions
+      });
+    } catch {
+      setMelhorEnvioTestResult({ success: false, message: 'Falha na conexão com a API da Vercel.' });
+    } finally {
+      setIsTestingMelhorEnvio(false);
     }
   };
 
@@ -1929,6 +2193,27 @@ export const AdminPanel: React.FC = () => {
                   </label>
                 </div>
 
+                <div className="flex flex-col items-start gap-3">
+                  <button type="button" disabled={isTestingMelhorEnvio} onClick={handleTestMelhorEnvio}
+                    className="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs">
+                    {isTestingMelhorEnvio ? 'Verificando...' : 'Testar Conexão Melhor Envio'}
+                  </button>
+                  <p className="text-[11px] text-slate-400">
+                    Testa uma cotação sem comprar etiqueta. O token e o ambiente são definidos pelas variáveis da Vercel;
+                    o checkbox visual de Sandbox não altera o servidor.
+                  </p>
+                  {melhorEnvioTestResult && (
+                    <div className={`w-full rounded-xl border p-3 text-xs ${melhorEnvioTestResult.success
+                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                      : 'border-red-500/40 bg-red-500/10 text-red-300'}`}>
+                      {melhorEnvioTestResult.message}
+                      {melhorEnvioTestResult.environment && ` Ambiente: ${melhorEnvioTestResult.environment}.`}
+                      {melhorEnvioTestResult.availableOptions !== undefined &&
+                        ` Opções retornadas: ${melhorEnvioTestResult.availableOptions}.`}
+                    </div>
+                  )}
+                </div>
+
                 {/* Melhor Envio Instructions Accordion */}
                 <div className="p-4 rounded-2xl bg-black/40 border border-white/5 space-y-2 text-[11px] text-slate-400">
                   <p className="font-bold text-white flex items-center gap-1.5">
@@ -1941,6 +2226,131 @@ export const AdminPanel: React.FC = () => {
                     <li>Gere um novo token com permissões de cálculo de frete e envio, e cole no formulário acima.</li>
                   </ol>
                 </div>
+              </div>
+
+              <div className="rounded-2xl border border-blue-500/25 bg-blue-950/15 p-4 space-y-3">
+                <p className="font-extrabold text-sm text-white">Diagnóstico de prontidão do Checkout</p>
+                <p className="text-xs text-slate-400">Somente leitura. Confere variáveis e estrutura do banco sem exibir segredos e sem criar pedido.</p>
+                <button type="button" disabled={isCheckingCheckout} onClick={handleCheckCheckoutReadiness}
+                  className="rounded-xl border border-blue-400/40 bg-blue-500/15 p-3 text-xs text-blue-200 font-bold disabled:opacity-50">
+                  {isCheckingCheckout ? 'Verificando...' : 'Verificar segurança do checkout'}
+                </button>
+                {checkoutReadiness && (
+                  <div className="text-xs space-y-2">
+                    {Object.entries(checkoutReadiness.checks).map(([name, passed]) => (
+                      <div key={name} className="flex items-center justify-between gap-3">
+                        <span className="text-slate-300 break-all">{name}</span>
+                        <span className={passed ? 'text-emerald-300' : 'text-amber-300'}>
+                          {passed ? 'OK' : 'Pendente'}
+                        </span>
+                      </div>
+                    ))}
+                    <p className="text-amber-200">{checkoutReadiness.message}</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-2xl border border-amber-500/25 bg-amber-950/15 p-4 space-y-3">
+                <p className="font-extrabold text-sm text-white">Diagnóstico seguro do Webhook Mercado Pago</p>
+                <p className="text-xs text-slate-400">Mostra apenas se uma tentativa POST chegou ao webhook em Preview e quais campos estavam presentes, sem revelar segredos.</p>
+                <button type="button" onClick={handleCheckWebhookDiagnostics} disabled={isCheckingWebhook}
+                  className="rounded-xl border border-amber-400/40 bg-amber-500/15 p-3 text-xs text-amber-200 font-bold disabled:opacity-50">
+                  {isCheckingWebhook ? 'Consultando...' : 'Verificar última tentativa recebida'}
+                </button>
+                <button type="button" onClick={handleWebhookSelfTest} disabled={isProbingWebhook}
+                  className="rounded-xl border border-emerald-400/40 bg-emerald-500/15 p-3 text-xs text-emerald-200 font-bold disabled:opacity-50">
+                  {isProbingWebhook ? 'Testando...' : 'Executar autoteste interno (sem pagamento)'}
+                </button>
+                <button type="button" onClick={handleCheckWebhookInbox} disabled={isCheckingWebhookInbox}
+                  className="rounded-xl border border-cyan-400/40 bg-cyan-500/15 p-3 text-xs text-cyan-200 font-bold disabled:opacity-50">
+                  {isCheckingWebhookInbox ? 'Consultando fila...' : 'Verificar fila de pagamentos de TESTE'}
+                </button>
+                <button type="button" onClick={handleVerifyQueuedPayment} disabled={isVerifyingQueuedPayment}
+                  className="rounded-xl border border-sky-400/40 bg-sky-500/15 p-3 text-xs text-sky-200 font-bold disabled:opacity-50">
+                  {isVerifyingQueuedPayment ? 'Conferindo Mercado Pago...' : 'Verificar evento da fila no Mercado Pago (sem aprovar)'}
+                </button>
+                <button type="button" onClick={handleProcessQueuedPayment} disabled={isProcessingQueuedPayment}
+                  className="rounded-xl border border-amber-400/40 bg-amber-500/15 p-3 text-xs text-amber-200 font-bold disabled:opacity-50">
+                  {isProcessingQueuedPayment ? 'Validando e processando...' : 'Processar 1 evento validado de TESTE'}
+                </button>
+                <p className="text-xs text-amber-200">
+                  Somente Preview: pode aprovar um pedido de teste se o Mercado Pago confirmar
+                  vendedor, comprador, valor e preferência. Eventos falsos não aprovam pedidos.
+                </p>
+                {queueProcessResult && (
+                  <div className="rounded-lg border border-amber-500/30 p-3 text-xs text-slate-200 space-y-1">
+                    <p>{queueProcessResult.message || 'Processamento não concluído.'}</p>
+                    <p>Pagamento validado: {queueProcessResult.verified ? 'Sim' : 'Não'}</p>
+                    <p>Pedido atualizado: {queueProcessResult.orderUpdated ? 'Sim' : 'Não'}</p>
+                    <p>Já estava aprovado: {queueProcessResult.alreadyApproved ? 'Sim' : 'Não'}</p>
+                    <p>Evento concluído na fila: {queueProcessResult.queuedEventCompleted ? 'Sim' : 'Não'}</p>
+                  </div>
+                )}
+                {queuedPaymentVerification && (
+                  <div className="rounded-lg border border-sky-500/30 p-3 text-xs text-slate-200 space-y-1">
+                    <p>{queuedPaymentVerification.message || 'Verificação indisponível.'}</p>
+                    <p className={queuedPaymentVerification.verified ? 'text-emerald-300' : 'text-amber-300'}>
+                      Pagamento conferido: {queuedPaymentVerification.verified ? 'Sim' : 'Não'}
+                    </p>
+                    <p>Nenhum pedido ou status da fila foi alterado.</p>
+                  </div>
+                )}
+                {webhookInbox && (
+                  <div className="rounded-lg border border-cyan-500/30 p-3 text-xs text-slate-200 space-y-1">
+                    <p>{webhookInbox.message}</p>
+                    <p>Notificações recentes: {webhookInbox.recentCount}</p>
+                    <p>Aguardando processamento: {webhookInbox.queuedCount}</p>
+                    <p>Última chegada: {webhookInbox.latestReceivedAt || 'Nenhuma'}</p>
+                    <p className="text-amber-200">Esta consulta não confirma nem aprova pagamentos.</p>
+                  </div>
+                )}
+                {webhookProbe && (
+                  <div className="text-xs space-y-1">
+                    <p className={webhookProbe.success ? 'text-emerald-300' : 'text-amber-300'}>
+                      {webhookProbe.message || webhookProbe.error || 'Autoteste não concluído'}
+                    </p>
+                    {typeof webhookProbe.routeHttpStatus === 'number' && <p>HTTP: {webhookProbe.routeHttpStatus}</p>}
+                    <p>Assinatura aceita: {webhookProbe.webhookSignatureAccepted ? 'Sim' : 'Não'}</p>
+                    <p>Diagnóstico registrado: {webhookProbe.databaseDiagnosticRecorded ? 'Sim' : 'Não'}</p>
+                    <p>HMAC verificado no banco: {webhookProbe.databaseDiagnosticSignatureVerified ? 'Sim' : 'Não'}</p>
+                    <div className="mt-3 rounded-lg border border-white/15 p-2 space-y-1">
+                      <p className="font-bold text-white">Verificação cruzada Vercel × Supabase</p>
+                      <p>Supabase HTTP: {webhookProbe.supabaseHttpStatus ?? 'Indisponível'}</p>
+                      <p>Assinatura aceita no Supabase: {webhookProbe.supabaseSignatureAccepted ? 'Sim' : 'Não'}</p>
+                      <p className={webhookProbe.signatureSecretsConsistent ? 'text-emerald-300' : 'text-amber-300'}>
+                        Mesma assinatura validada nos dois ambientes: {webhookProbe.signatureSecretsConsistent ? 'Sim' : 'Não'}
+                      </p>
+                    </div>
+                    {webhookProbe.target && <p>Destino: {webhookProbe.target === 'public_preview_branch_alias' ? 'URL pública da branch Preview' : webhookProbe.target}</p>}
+                    {webhookProbe.possibleVercelProtection && (
+                      <p className="text-red-300 font-bold">Possível bloqueio pela proteção de deployment da Vercel (HTTP 401/403 antes da função).</p>
+                    )}
+                    {webhookProbe.responseIsJson === false && (
+                      <p className="text-amber-300">A resposta não é JSON da API; a requisição pode ter sido interceptada antes do webhook.</p>
+                    )}
+                    {webhookProbe.diagnosticDbErrorCode && <p>Código do banco: {webhookProbe.diagnosticDbErrorCode}</p>}
+                  </div>
+                )}
+                {webhookDiagnostics && (
+                  <div className="text-xs space-y-2">
+                    <p className="text-slate-300">{webhookDiagnostics.message}</p>
+                    {webhookDiagnostics.diagnostics && (
+                      <>
+                        <p className="text-slate-400">Registrado em: {webhookDiagnostics.diagnostics.last_attempt_at}</p>
+                        {Object.entries(webhookDiagnostics.diagnostics)
+                          .filter(([field]) => field !== 'last_attempt_at')
+                          .map(([field, value]) => (
+                            <div key={field} className="flex items-center justify-between gap-3">
+                              <span className="text-slate-300 break-all">{field}</span>
+                              <span className={value ? 'text-emerald-300' : 'text-amber-300'}>
+                                {value ? 'Sim' : 'Não'}
+                              </span>
+                            </div>
+                          ))}
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Action Save Button */}
@@ -1957,8 +2367,8 @@ export const AdminPanel: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => {
-                    handleSaveApiSettings();
-                    showToast('Credenciais validadas com sucesso!', 'success');
+                    void handleTestMercadoPago();
+                    void handleTestMelhorEnvio();
                   }}
                   className="px-5 py-3.5 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition flex items-center gap-2"
                 >

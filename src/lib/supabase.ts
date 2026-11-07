@@ -6,9 +6,62 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { Product, Kit, Order, SiteSettings, CustomerProfile, OrderPaymentStatus, OrderShippingStatus } from '../types';
 
-// Storage keys for custom Supabase credentials configured via the Admin UI
+// These are PUBLIC project identifiers, not server credentials.
+// Use the canonical project for this store to avoid stale browser overrides.
+const PULSAR_SUPABASE_URL = 'https://srvctqtmlbkmgiazgsrj.supabase.co';
+const PULSAR_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_cFGIrygvfoAZHLckdq8iLA_rZZApxFz';
+
+// Legacy browser settings may contain obsolete Supabase credentials.
+// Never trust them to override the store's known Supabase project.
 const STORAGE_URL_KEY = 'pulsar_supabase_url';
 const STORAGE_KEY_KEY = 'pulsar_supabase_anon_key';
+
+let adminApiLastError = '';
+export function getAdminApiLastError(): string { return adminApiLastError; }
+
+/** Protected administrative requests; no direct browser write to public tables. */
+async function adminApi(path: string, method: 'GET'|'POST'|'PATCH'|'DELETE', body?: unknown): Promise<{ ok: boolean; status: number; data?: any }> {
+  const client = getSupabaseClient();
+  if (!client) return { ok: false, status: 503 };
+  const { data: { session } } = await client.auth.getSession();
+  if (!session?.access_token) return { ok: false, status: 403 };
+  try {
+    const res = await fetch(path, {
+      method,
+      headers: {
+        Authorization: 'Bearer ' + session.access_token,
+        ...(body === undefined ? {} : { 'Content-Type': 'application/json' })
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      cache: 'no-store'
+    });
+    const json = await res.json().catch(() => ({}));
+    adminApiLastError = res.ok ? '' : ('HTTP ' + res.status + ' · ' +
+      (typeof json.code === 'string' ? json.code : 'unknown_error') +
+      (typeof json.dbCode === 'string' ? ' (' + json.dbCode + ')' : '') +
+      (typeof json.reason === 'string' ? ' · ' + json.reason : ''));
+    if (!res.ok) console.warn('Pulsar admin API:', adminApiLastError);
+    return { ok: res.ok, status: res.status, data: json.data };
+  } catch {
+    return { ok: false, status: 503 };
+  }
+}
+async function saveAdminCatalog(table: 'products'|'kits', id: string, row: Record<string, unknown>) {
+  // Timestamps are owned by the database/server. Never send updated_at from
+  // the browser: the protected endpoint rejects fields outside its allowlist.
+  const { updated_at: _ignoredTimestamp, ...safeRow } = row;
+  const endpoint = '/api/admin/catalog?table=' + table + '&id=' + encodeURIComponent(id);
+  const update = await adminApi(endpoint, 'PATCH',
+    Object.fromEntries(Object.entries(safeRow).filter(([key]) => key !== 'id')));
+  if (update.ok) return true;
+  if (update.status !== 404) {
+    console.warn('Falha ao atualizar ' + table + ' via API (HTTP ' + update.status + ')');
+    return false;
+  }
+  const create = await adminApi('/api/admin/catalog?table=' + table, 'POST', safeRow);
+  if (!create.ok) console.warn('Falha ao cadastrar ' + table + ' via API (HTTP ' + create.status + ')');
+  return create.ok;
+}
 
 /**
  * Retrieves the effective Supabase URL and Anon Key.
@@ -16,27 +69,17 @@ const STORAGE_KEY_KEY = 'pulsar_supabase_anon_key';
  * then falls back to environment variables.
  */
 export function getSupabaseCredentials(): { url: string; key: string } {
-  const localUrl = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_URL_KEY) : null;
-  const localKey = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY_KEY) : null;
-
-  const url = (localUrl || import.meta.env.VITE_SUPABASE_URL || '').trim();
-  const key = (localKey || import.meta.env.VITE_SUPABASE_ANON_KEY || '').trim();
-
-  return { url, key };
+  // This site is bound to the existing Pulsar project. A publishable key
+  // is designed for browser use; private service-role keys remain on Vercel.
+  // In preview, a missing VITE_ variable must not break authentication.
+  return { url: PULSAR_SUPABASE_URL, key: PULSAR_SUPABASE_PUBLISHABLE_KEY };
 }
 
-/**
- * Saves custom Supabase credentials from the Admin Panel.
- */
-export function saveSupabaseCredentials(url: string, key: string) {
+/** Clear any old per-browser overrides that point to the wrong project. */
+export function saveSupabaseCredentials(_url: string, _key: string) {
   if (typeof window !== 'undefined') {
-    if (url) localStorage.setItem(STORAGE_URL_KEY, url.trim());
-    else localStorage.removeItem(STORAGE_URL_KEY);
-
-    if (key) localStorage.setItem(STORAGE_KEY_KEY, key.trim());
-    else localStorage.removeItem(STORAGE_KEY_KEY);
-
-    // Reset client instance
+    localStorage.removeItem(STORAGE_URL_KEY);
+    localStorage.removeItem(STORAGE_KEY_KEY);
     cachedClient = null;
   }
 }
@@ -101,9 +144,9 @@ export async function testSupabaseConnection(): Promise<{
   }
 
   try {
-    // Attempt a lightweight select from products or site_settings
+    // Public catalog remains accessible after site_settings becomes private.
     const { data, error } = await client
-      .from('site_settings')
+      .from('products')
       .select('id')
       .limit(1);
 
@@ -146,14 +189,24 @@ export async function fetchProductsFromSupabase(): Promise<Product[] | null> {
   if (!client) return null;
 
   try {
-    const { data, error } = await client
-      .from('products')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.warn('Erro ao buscar produtos do Supabase:', error.message);
-      return null;
+    // Admin may inspect inactive items and cost only after the server checks
+    // Supabase Auth and app_metadata. Visitors receive an active-only,
+    // column-restricted catalog protected by RLS.
+    const { data: { session } } = await client.auth.getSession();
+    const adminResult = session ? await adminApi('/api/admin/catalog?table=products', 'GET') : null;
+    let data: any[] | null = null;
+    if (adminResult?.ok && Array.isArray(adminResult.data)) {
+      data = adminResult.data;
+    } else {
+      const publicResult = await client.from('products')
+        .select('id,name,slug,short_description,detailed_description,sale_price,promo_price,stock,track_stock,sku,category,chip_type,height_cm,width_cm,length_cm,weight_grams,is_active,is_featured,is_best_seller,rating,reviews_count,badge,images,created_at,updated_at')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false });
+      if (publicResult.error) {
+        console.warn('Erro ao buscar produtos do Supabase:', publicResult.error.message);
+        return null;
+      }
+      data = publicResult.data;
     }
 
     return (data || []).map((row) => ({
@@ -190,6 +243,40 @@ export async function fetchProductsFromSupabase(): Promise<Product[] | null> {
   }
 }
 
+/**
+ * Update only fields that actually changed, avoiding overwriting unrelated
+ * price, cost, stock, or imagery fields during a description-only edit.
+ */
+export async function patchProductInSupabase(productId: string, changes: Partial<Product>): Promise<boolean> {
+  const row: Record<string, unknown> = {};
+  const fieldMap: Array<[keyof Product, string]> = [
+    ['name', 'name'], ['slug', 'slug'],
+    ['shortDescription', 'short_description'],
+    ['detailedDescription', 'detailed_description'],
+    ['salePrice', 'sale_price'], ['promoPrice', 'promo_price'],
+    ['cost', 'cost'], ['stock', 'stock'],
+    ['trackStock', 'track_stock'], ['sku', 'sku'],
+    ['category', 'category'], ['chipType', 'chip_type'],
+    ['weightGrams', 'weight_grams'], ['isActive', 'is_active'],
+    ['isFeatured', 'is_featured'], ['isBestSeller', 'is_best_seller'],
+    ['rating', 'rating'], ['reviewsCount', 'reviews_count'],
+    ['badge', 'badge'], ['images', 'images']
+  ];
+  for (const [key, column] of fieldMap) {
+    if (Object.prototype.hasOwnProperty.call(changes, key) && changes[key] !== undefined) {
+      row[column] = changes[key];
+    }
+  }
+  if (changes.dimensions !== undefined) {
+    if (changes.dimensions.heightCm !== undefined) row.height_cm = changes.dimensions.heightCm;
+    if (changes.dimensions.widthCm !== undefined) row.width_cm = changes.dimensions.widthCm;
+    if (changes.dimensions.lengthCm !== undefined) row.length_cm = changes.dimensions.lengthCm;
+  }
+  if (!Object.keys(row).length) return true;
+  const result = await adminApi('/api/admin/catalog?table=products&id=' + encodeURIComponent(productId), 'PATCH', row);
+  return result.ok;
+}
+
 export async function upsertProductInSupabase(prod: Product): Promise<boolean> {
   const client = getSupabaseClient();
   if (!client) return false;
@@ -223,12 +310,7 @@ export async function upsertProductInSupabase(prod: Product): Promise<boolean> {
       updated_at: new Date().toISOString(),
     };
 
-    const { error } = await client.from('products').upsert(row, { onConflict: 'id' });
-    if (error) {
-      console.warn('Erro ao sincronizar produto no Supabase:', error.message);
-      return false;
-    }
-    return true;
+    return await saveAdminCatalog('products', prod.id, row);
   } catch (err) {
     console.warn('Falha no upsertProductInSupabase:', err);
     return false;
@@ -240,8 +322,7 @@ export async function deleteProductInSupabase(productId: string): Promise<boolea
   if (!client) return false;
 
   try {
-    const { error } = await client.from('products').delete().eq('id', productId);
-    return !error;
+    return (await adminApi('/api/admin/catalog?table=products&id=' + encodeURIComponent(productId), 'DELETE')).ok;
   } catch {
     return false;
   }
@@ -256,14 +337,21 @@ export async function fetchKitsFromSupabase(): Promise<Kit[] | null> {
   if (!client) return null;
 
   try {
-    const { data, error } = await client
-      .from('kits')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.warn('Erro ao buscar combos do Supabase:', error.message);
-      return null;
+    const { data: { session } } = await client.auth.getSession();
+    const adminResult = session ? await adminApi('/api/admin/catalog?table=kits', 'GET') : null;
+    let data: any[] | null = null;
+    if (adminResult?.ok && Array.isArray(adminResult.data)) {
+      data = adminResult.data;
+    } else {
+      const publicResult = await client.from('kits')
+        .select('*')
+        .eq('is_active', true)
+        .order('created_at', { ascending: false });
+      if (publicResult.error) {
+        console.warn('Erro ao buscar combos do Supabase:', publicResult.error.message);
+        return null;
+      }
+      data = publicResult.data;
     }
 
     return (data || []).map((row) => ({
@@ -309,8 +397,7 @@ export async function upsertKitInSupabase(kit: Kit): Promise<boolean> {
       updated_at: new Date().toISOString(),
     };
 
-    const { error } = await client.from('kits').upsert(row, { onConflict: 'id' });
-    return !error;
+    return await saveAdminCatalog('kits', kit.id, row);
   } catch {
     return false;
   }
@@ -321,8 +408,7 @@ export async function deleteKitInSupabase(kitId: string): Promise<boolean> {
   if (!client) return false;
 
   try {
-    const { error } = await client.from('kits').delete().eq('id', kitId);
-    return !error;
+    return (await adminApi('/api/admin/catalog?table=kits&id=' + encodeURIComponent(kitId), 'DELETE')).ok;
   } catch {
     return false;
   }
@@ -337,15 +423,9 @@ export async function fetchOrdersFromSupabase(): Promise<Order[] | null> {
   if (!client) return null;
 
   try {
-    const { data, error } = await client
-      .from('orders')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      console.warn('Erro ao buscar pedidos do Supabase:', error.message);
-      return null;
-    }
+    const result = await adminApi('/api/admin/orders', 'GET');
+    if (!result.ok) return null;
+    const data = result.data || [];
 
     return (data || []).map((row) => ({
       id: row.id,
@@ -380,45 +460,59 @@ export async function fetchOrdersFromSupabase(): Promise<Order[] | null> {
   }
 }
 
-export async function createOrderInSupabase(order: Order): Promise<boolean> {
+/**
+ * Customer history can only be retrieved with the current Supabase Auth bearer.
+ * A typed email or a browser-side customer ID never authorizes an order query.
+ * Server response includes only orders associated to the verified Auth UUID.
+ */
+export async function fetchCustomerOrdersFromSupabase(): Promise<Order[] | null> {
   const client = getSupabaseClient();
-  if (!client) return false;
-
+  if (!client) return null;
   try {
-    const row = {
-      id: order.id,
-      order_number: order.orderNumber,
-      customer_id: order.customerId || null,
-      customer_name: order.customerName,
-      customer_email: order.customerEmail,
-      customer_phone: order.customerWhatsapp,
-      customer_cpf: order.customerCpf,
-      items: order.items,
-      subtotal: order.subtotal,
-      discount_amount: order.discount,
-      shipping_price: order.shipping.price,
-      total_amount: order.total,
-      payment_method: order.paymentMethod,
-      payment_status: order.paymentStatus,
-      shipping_carrier: order.shipping.carrier,
-      shipping_service: order.shipping.service,
-      tracking_code: order.trackingCode || null,
-      shipping_address: order.shippingAddress,
-      pix_qr_code: order.pixQrCodeUrl || null,
-      created_at: order.createdAt || new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
+    const { data: sessionData } = await client.auth.getSession();
+    const token = sessionData.session?.access_token;
+    if (!token) return null;
+    const response = await fetch('/api/admin/orders?scope=customer', {
+      method: 'GET', cache: 'no-store',
+      headers: { Authorization: 'Bearer ' + token }
+    });
+    if (!response.ok) return null;
+    const result = await response.json();
+    if (!Array.isArray(result?.data)) return null;
+    return result.data.map((row: any): Order => ({
+      id: row.id,
+      orderNumber: row.order_number || row.id,
+      customerId: row.customer_id,
+      customerName: row.customer_name,
+      customerEmail: row.customer_email,
+      customerWhatsapp: '',
+      customerCpf: '',
+      items: Array.isArray(row.items) ? row.items : [],
+      subtotal: Number(row.subtotal),
+      discount: Number(row.discount_amount || 0),
+      shipping: {
+        id: 'melhor-envio',
+        carrier: row.shipping_carrier || 'Melhor Envio / Correios',
+        service: row.shipping_service || 'SEDEX Expresso',
+        price: Number(row.shipping_price || 0),
+        estimatedDays: 3,
+      },
+      total: Number(row.total_amount || row.subtotal),
+      paymentMethod: row.payment_method || 'pix',
+      paymentStatus: (row.payment_status as OrderPaymentStatus) || 'pending',
+      shippingStatus: (row.shipping_status as OrderShippingStatus) || 'pending',
+      trackingCode: row.tracking_code,
+      shippingAddress: row.shipping_address,
+      pixQrCodeUrl: null,
+      createdAt: row.created_at,
+    }));
+  } catch { return null; }
+}
 
-    const { error } = await client.from('orders').insert(row);
-    if (error) {
-      console.warn('Erro ao inserir pedido no Supabase:', error.message);
-      return false;
-    }
-    return true;
-  } catch (err) {
-    console.warn('Falha no createOrderInSupabase:', err);
-    return false;
-  }
+export async function createOrderInSupabase(_order: Order): Promise<boolean> {
+  // Checkout must calculate price/shipping on the server first.
+  // A client-side order must never be persisted or accepted as paid.
+  return false;
 }
 
 export async function updateOrderStatusInSupabase(
@@ -426,25 +520,11 @@ export async function updateOrderStatusInSupabase(
   paymentStatus?: OrderPaymentStatus,
   trackingCode?: string
 ): Promise<boolean> {
-  const client = getSupabaseClient();
-  if (!client) return false;
-
-  try {
-    const payload: Record<string, unknown> = {
-      updated_at: new Date().toISOString(),
-    };
-    if (paymentStatus) {
-      payload.payment_status = paymentStatus;
-    }
-    if (trackingCode !== undefined) {
-      payload.tracking_code = trackingCode;
-    }
-
-    const { error } = await client.from('orders').update(payload).eq('id', orderId);
-    return !error;
-  } catch {
-    return false;
-  }
+  if (paymentStatus !== undefined) return false; // only a verified payment webhook may change this.
+  if (trackingCode === undefined) return false;
+  return (await adminApi('/api/admin/orders?id=' + encodeURIComponent(orderId), 'PATCH', {
+    tracking_code: trackingCode
+  })).ok;
 }
 
 // -----------------------------------------------------------------------------
@@ -452,18 +532,11 @@ export async function updateOrderStatusInSupabase(
 // -----------------------------------------------------------------------------
 
 export async function fetchSettingsFromSupabase(): Promise<Partial<SiteSettings> | null> {
-  const client = getSupabaseClient();
-  if (!client) return null;
-
   try {
-    const { data, error } = await client
-      .from('site_settings')
-      .select('*')
-      .eq('id', 'default')
-      .maybeSingle();
-
-    if (error || !data) return null;
-
+    const response = await fetch('/api/storefront/settings', { cache: 'no-store' });
+    if (!response.ok) return null;
+    const { data } = await response.json();
+    if (!data) return null;
     return {
       logoUrl: data.logo_url,
       heroTitle: data.hero_title,
@@ -473,37 +546,31 @@ export async function fetchSettingsFromSupabase(): Promise<Partial<SiteSettings>
       whatsappNumber: data.whatsapp_number,
       originCep: data.origin_cep,
       mercadoPagoPublicKey: data.mercado_pago_public_key,
-      melhorEnvioToken: undefined, // Token nunca deve vir de tabela pública
+      melhorEnvioToken: undefined
     };
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 export async function updateSettingsInSupabase(settings: Partial<SiteSettings>): Promise<boolean> {
-  const client = getSupabaseClient();
-  if (!client) return false;
-
-  try {
-    const row = {
-      id: 'default',
-      logo_url: settings.logoUrl,
-      hero_title: settings.heroTitle,
-      hero_title_highlight: settings.heroTitleHighlight,
-      hero_subtitle: settings.heroSubtitle,
-      announcement_bar_text: settings.announcementBarText,
-      whatsapp_number: settings.whatsappNumber,
-      origin_cep: settings.originCep,
-      mercado_pago_public_key: settings.mercadoPagoPublicKey,
-      // Tokens ficam exclusivamente em variáveis protegidas na Vercel.
-      updated_at: new Date().toISOString(),
-    };
-
-    const { error } = await client.from('site_settings').upsert(row, { onConflict: 'id' });
-    return !error;
-  } catch {
-    return false;
-  }
+  const row = {
+    logo_url: settings.logoUrl,
+    hero_title: settings.heroTitle,
+    hero_title_highlight: settings.heroTitleHighlight,
+    hero_subtitle: settings.heroSubtitle,
+    announcement_bar_text: settings.announcementBarText,
+    whatsapp_number: settings.whatsappNumber,
+    origin_cep: settings.originCep,
+    mercado_pago_public_key: settings.mercadoPagoPublicKey
+  };
+  const payload = Object.fromEntries(Object.entries(row).filter(([,value]) => value !== undefined));
+  if (Object.keys(payload).length === 0) return true;
+  const result = await adminApi('/api/admin/settings', 'PATCH', payload);
+  if (!result.ok || !result.data) return false;
+  // Require every submitted, supported CMS field to match the persisted row.
+  // A generic HTTP 200 does not by itself prove the requested values were saved.
+  return Object.entries(payload).every(([key, value]) =>
+    JSON.stringify(result.data[key]) === JSON.stringify(value)
+  );
 }
 
 // -----------------------------------------------------------------------------
