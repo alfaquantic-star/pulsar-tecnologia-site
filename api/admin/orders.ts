@@ -1,11 +1,34 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { requireAdmin } from '../_lib/admin-auth.js';
+import { requireAdmin, verifyCustomerIdentity, adminDatabase } from '../_lib/admin-auth.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Cache-Control', 'no-store');
   if (!['GET','PATCH'].includes(req.method || '')) {
     res.setHeader('Allow', 'GET, PATCH');
     return res.status(405).json({ error: 'Method not allowed' });
+  }
+  // Narrow customer mode reuses the existing function to remain within the
+  // Vercel Hobby 12-function limit. Customer authorization is checked BEFORE
+  // any database query. Admin GET/PATCH behavior is unchanged.
+  if (req.method === 'GET' && req.query.scope === 'customer') {
+    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    res.setHeader('Vary', 'Authorization');
+    if (!req.headers.authorization?.startsWith('Bearer ')) {
+      return res.status(401).json({ code: 'missing_session' });
+    }
+    try {
+      const user = await verifyCustomerIdentity(req);
+      if (!user) return res.status(403).json({ code: 'customer_identity_required' });
+      const { data, error } = await adminDatabase().from('orders')
+        .select('id,order_number,customer_id,customer_name,customer_email,items,subtotal,discount_amount,shipping_price,shipping_carrier,shipping_service,total_amount,payment_method,payment_status,shipping_status,tracking_code,shipping_address,created_at')
+        .eq('customer_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (error) return res.status(503).json({ code: 'orders_unavailable' });
+      return res.status(200).json({ data: data || [] });
+    } catch {
+      return res.status(503).json({ code: 'customer_backend_unavailable' });
+    }
   }
   try {
     const auth = await requireAdmin(req);
