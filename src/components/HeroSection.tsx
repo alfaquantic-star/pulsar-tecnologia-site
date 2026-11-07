@@ -2,8 +2,7 @@ import React from 'react';
 import { 
   Sparkles, 
   ArrowRight, 
-  Wifi, 
-  CheckCircle2
+  Wifi
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 
@@ -16,9 +15,9 @@ export const HeroSection: React.FC = () => {
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] sm:w-[900px] h-[600px] sm:h-[900px] bg-gradient-to-b from-[#FF5500]/15 via-[#FFAA00]/5 to-transparent rounded-full blur-[120px] pointer-events-none" />
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 xl:gap-10 items-center">
           {/* Left Column: Headlines & Call to Actions */}
-          <div className="lg:col-span-7 space-y-6 text-center lg:text-left">
+          <div className="lg:col-span-5 space-y-6 text-center lg:text-left">
             {/* Super Badge */}
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-white/5 border border-[#FF5500]/40 backdrop-blur-md shadow-lg shadow-[#FF5500]/10">
               <span className="flex h-2 w-2 rounded-full bg-[#FF5500] animate-pulse" />
@@ -28,7 +27,7 @@ export const HeroSection: React.FC = () => {
             </div>
 
             {/* Main Headline with balanced wrap */}
-            <h1 className="text-3xl sm:text-5xl lg:text-6xl font-black text-white tracking-tight leading-[1.18] max-w-2xl mx-auto lg:mx-0">
+            <h1 className="text-3xl sm:text-5xl lg:text-[clamp(2.1rem,3.5vw,3.7rem)] font-black text-white tracking-tight leading-[1.18] max-w-2xl mx-auto lg:mx-0">
               {settings.heroTitle}{' '}
               <span className="text-gradient-pulsar drop-shadow-[0_0_25px_rgba(255,85,0,0.4)] block sm:inline-block">
                 {settings.heroTitleHighlight}
@@ -41,7 +40,7 @@ export const HeroSection: React.FC = () => {
             </p>
 
             {/* CTA Buttons */}
-            <div className="flex flex-col sm:flex-row gap-3.5 justify-center lg:justify-start pt-2">
+            <div className="flex flex-col xl:flex-row gap-3.5 justify-center lg:justify-start pt-2">
               <button
                 onClick={() => {
                   const combosEl = document.getElementById('combos');
@@ -90,29 +89,22 @@ export const HeroSection: React.FC = () => {
             </div>
           </div>
 
-          {/* Right Column: new Google NFC / QR review plaque replacing old mockup */}
-          <div className="lg:col-span-5 relative flex items-center justify-center">
-            <div className="absolute inset-0 bg-gradient-to-tr from-[#FF5500]/20 via-[#FFAA00]/10 to-transparent rounded-full blur-2xl pointer-events-none" />
-            <div className="relative w-full max-w-[440px] mx-auto px-2 py-5 sm:py-0">
-              <div className="absolute top-1 right-0 z-20 inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500 text-black font-extrabold text-[10px] sm:text-xs shadow-xl shadow-emerald-500/20">
-                <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
-                <span>1 Toque = 5 Estrelas</span>
-              </div>
+          {/* Original horizontal product photo supplied by the shop owner.
+              Show it in full, without cropping or overlaid duplicate badges. */}
+          <div className="lg:col-span-7 relative min-w-0 flex items-center justify-center">
+            <div className="absolute inset-0 bg-gradient-to-tr from-[#FF5500]/20 via-[#FFAA00]/10 to-transparent rounded-[32px] blur-3xl pointer-events-none" />
+            <div className="relative w-full max-w-[900px] mx-auto">
               <img
-                src="/assets/placa-smart-google-nfc.svg"
-                alt="Placa Smart de Avaliações Google em PVC, com tecnologia NFC e QR Code"
-                width={520}
-                height={690}
+                src="https://d2ol7oe51mr4n9.cloudfront.net/user_3JDiTMIpNF3Cbb1ebZrnrdDTwQ3/0a10751f-8275-4c01-81e6-7668ee439787.png"
+                alt="Placa Smart de Avaliações Google com NFC e QR Code, benefícios e botão Quero a minha Placa Smart"
+                width={1672}
+                height={941}
                 loading="eager"
                 decoding="async"
                 fetchPriority="high"
-                className="relative block w-full h-auto max-h-[560px] object-contain rounded-[28px] drop-shadow-[0_18px_35px_rgba(255,100,0,0.25)] transition-transform duration-500 hover:scale-[1.025]"
+                referrerPolicy="no-referrer"
+                className="block w-full h-auto object-contain rounded-2xl sm:rounded-[28px] shadow-2xl shadow-[#FF5500]/20"
               />
-              <div className="mt-3 flex flex-wrap justify-center gap-2 text-[10px] sm:text-xs text-slate-300">
-                <span className="rounded-full border border-[#FF5500]/40 bg-[#16151C] px-3 py-1">Tecnologia NFC</span>
-                <span className="rounded-full border border-[#FF5500]/40 bg-[#16151C] px-3 py-1">QR Code</span>
-                <span className="rounded-full border border-[#FF5500]/40 bg-[#16151C] px-3 py-1">PVC resistente</span>
-              </div>
             </div>
           </div>
         </div>
