@@ -198,14 +198,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!body.customer || !body.address ||
         String(body.address.zipCode || '').replace(/\D/g,'') !==
           String(body.cep || '').replace(/\D/g,'')) {
-    // Intentionally no customer identity accepted from request body. Ensure
-    // the verified account really owns the email used for this checkout.
+      return res.status(400).json({ error: 'Endereço não corresponde ao CEP de frete.' });
+    }
+    // Only a verified Supabase Auth session can own a customer order.
+    // Never accept a customer UUID from request body or a typed email alone.
     if (customerStage &&
         String(body.customer.email || '').trim().toLowerCase() !==
           verifiedCustomer!.email?.trim().toLowerCase()) {
       return res.status(403).json({ error: 'O e-mail do pedido precisa corresponder à conta verificada.' });
-    }
-      return res.status(400).json({ error: 'Endereço não corresponde ao CEP de frete.' });
     }
     // The browser never determines monetary amounts.
     const verified = {
