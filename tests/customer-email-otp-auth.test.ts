@@ -6,7 +6,7 @@ const read = path => readFileSync(new URL('../' + path, import.meta.url), 'utf8'
 const store = read('src/context/StoreContext.tsx');
 const modal = read('src/components/AuthModal.tsx');
 
-test('customer identity must use verified Supabase Auth OTP instead of typed email', () => {
+test('customer identity requires verified Supabase Auth redirect instead of typed email', () => {
   assert.match(store, /auth\.signInWithOtp\(/);
   assert.match(store, /auth\.verifyOtp\(/);
   assert.match(store, /auth\.getUser\(/);
@@ -15,11 +15,12 @@ test('customer identity must use verified Supabase Auth OTP instead of typed ema
   assert.match(store, /data\.user\.app_metadata\?\.role === 'admin'/);
 });
 
-test('client signup uses email OTP without collecting CPF or simulated identity', () => {
+test('customer login uses default magic link without collecting CPF or fake code', () => {
   assert.match(modal, /requestCustomerOtp\(customerEmail\)/);
-  assert.match(modal, /verifyCustomerOtp\(customerEmail, customerOtp\)/);
+  assert.match(modal, /Enviar link de acesso/);
+  assert.match(store, /emailRedirectTo: 'https:\/\/pulsar-tecnologia-site-git-security-server-api-phase1-qr-flow\.vercel\.app\/'/);
   assert.doesNotMatch(modal, /loginAsCustomer|customerCpf|setCustomerCpf|CPF \(Nota Fiscal\)/);
-  assert.match(modal, /Código de verificação/);
+  assert.doesNotMatch(modal, /Código de verificação recebido por e-mail/);
 });
 
 test('client order ownership cannot be inferred from an email string', () => {
