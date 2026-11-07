@@ -4,9 +4,6 @@ import {
   Lock, 
   User, 
   Mail, 
-  KeyRound, 
-  Eye, 
-  EyeOff, 
   ShieldCheck, 
   ShoppingBag, 
   ArrowRight,
@@ -23,7 +20,6 @@ export const AuthModal: React.FC = () => {
     closeAuthModal,
     authModalTab,
     setAuthModalTab,
-    loginAsAdmin,
     loginAsCustomer,
     currentUser,
     logout
@@ -35,12 +31,6 @@ export const AuthModal: React.FC = () => {
   const [customerWhatsapp, setCustomerWhatsapp] = useState('');
   const [customerCpf, setCustomerCpf] = useState('');
   const [isNewCustomer, setIsNewCustomer] = useState(false);
-
-  // Admin form fields
-  const [adminEmail, setAdminEmail] = useState('contatoviniciuscastro@gmail.com');
-  const [adminPassword, setAdminPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [adminError, setAdminError] = useState('');
 
   if (!isAuthModalOpen) return null;
 
@@ -55,14 +45,6 @@ export const AuthModal: React.FC = () => {
     });
   };
 
-  const handleAdminSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setAdminError('');
-    const success = loginAsAdmin(adminEmail, adminPassword);
-    if (!success) {
-      setAdminError('E-mail ou senha incorretos. Acesso exclusivo do administrador.');
-    }
-  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
