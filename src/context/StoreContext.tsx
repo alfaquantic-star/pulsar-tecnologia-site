@@ -84,7 +84,7 @@ interface StoreContextType {
   setCurrentUser: (user: CustomerProfile | null) => void;
   login: (email: string, role?: 'customer' | 'admin') => boolean;
   loginAsAdmin: (email: string, pass: string) => Promise<boolean>;
-  requestCustomerOtp: (email: string) => Promise<boolean>;
+  requestCustomerOtp: (email: string) => Promise<{ ok: boolean; reason?: 'rate_limit' | 'unauthorized' | 'other' }>;
   verifyCustomerOtp: (email: string, token: string) => Promise<boolean>;
   logout: () => void;
   switchUserRole: () => void;
@@ -727,11 +727,11 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   };
 
   // Customer identity requires verified email OTP, never a typed email.
-  const requestCustomerOtp = async (email: string): Promise<boolean> => {
+  const requestCustomerOtp = async (email: string): Promise<{ ok: boolean; reason?: 'rate_limit' | 'unauthorized' | 'other' }> => {
     const clean = email.trim().toLowerCase();
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(clean)) return false;
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(clean)) return { ok: false, reason: 'other' };
     const client = getSupabaseClient();
-    if (!client) return false;
+    if (!client) return { ok: false, reason: 'other' };
     try {
       const { error } = await client.auth.signInWithOtp({
         email: clean,
@@ -741,8 +741,17 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
           emailRedirectTo: 'https://pulsar-tecnologia-site-git-security-server-api-phase1-qr-flow.vercel.app/'
         }
       });
-      return !error;
-    } catch { return false; }
+      if (!error) return { ok: true };
+      const status = 'status' in error ? Number(error.status) : 0;
+      const code = 'code' in error ? String(error.code) : '';
+      if (status === 429 || /over_email_send_rate_limit|rate.limit/i.test(code + ' ' + error.message)) {
+        return { ok: false, reason: 'rate_limit' };
+      }
+      if (/email.address.not.authorized/i.test(code + ' ' + error.message)) {
+        return { ok: false, reason: 'unauthorized' };
+      }
+      return { ok: false, reason: 'other' };
+    } catch { return { ok: false, reason: 'other' }; }
   };
 
   const verifyCustomerOtp = async (email: string, token: string): Promise<boolean> => {

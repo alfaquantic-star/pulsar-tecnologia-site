@@ -49,9 +49,15 @@ export const AuthModal: React.FC = () => {
     setCustomerBusy(true);
     setCustomerError('');
     try {
-      const ok = await requestCustomerOtp(customerEmail);
-      if (ok) setLinkSent(true);
-      else setCustomerError('Não foi possível enviar o link. Verifique se seu e-mail é autorizado na equipe Supabase e tente novamente.');
+      const result = await requestCustomerOtp(customerEmail);
+      if (result.ok) setLinkSent(true);
+      else if (result.reason === 'rate_limit') {
+        setCustomerError('Limite gratuito de envio de e-mails da Supabase atingido. Aguarde a liberação do limite antes de tentar novamente.');
+      } else if (result.reason === 'unauthorized') {
+        setCustomerError('Este e-mail não está autorizado na equipe Supabase para o serviço gratuito.');
+      } else {
+        setCustomerError('Não foi possível enviar o link. Confira seu endereço de e-mail e a configuração da Supabase.');
+      }
     } finally {
       setCustomerBusy(false);
     }
