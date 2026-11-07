@@ -11,8 +11,8 @@ test('legacy unverified customer label is gone and account requires email verifi
 
   assert.doesNotMatch(area, /Cliente Verificado/);
   assert.match(area, /Cadastro local — não verificado/);
-  assert.match(modal, /Confirme seu endereço de e-mail/);
-  assert.match(modal, /verifyCustomerOtp/);
+  assert.match(modal, /Receba um link de confirmação/);
+  assert.match(modal, /requestCustomerOtp/);
   assert.match(store, /auth\.verifyOtp\(/);
   assert.doesNotMatch(modal, /CPF \(Nota Fiscal\)|setCustomerCpf|customerCpf/);
   assert.doesNotMatch(store, /Conta de cliente criada com sucesso/);
