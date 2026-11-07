@@ -227,86 +227,38 @@ export const AuthModal: React.FC = () => {
           </div>
         )}
 
-        {/* TAB 2: ADMIN / LOJISTA LOGIN */}
+        {/* Secure admin login is hosted in Preview until the coordinated main
+            branch + shared Supabase RLS cutover is completed. Do not restore
+            the legacy local admin password flow or public table writes here. */}
         {authModalTab === 'admin' && (
           <div className="space-y-5 animate-in fade-in duration-150">
-            <div>
-              <div className="w-12 h-12 rounded-2xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-300 mb-3 shadow-lg shadow-purple-500/10">
-                <ShieldCheck className="w-6 h-6" />
-              </div>
-              <h3 className="text-xl font-black text-white">Portal do Lojista Pulsar</h3>
-              <p className="text-xs text-slate-400 mt-1">
-                Acesso administrativo restrito para gestão de pedidos, estoque, Mercado Pago, Melhor Envio e CMS.
-              </p>
+            <div className="w-12 h-12 rounded-2xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-300 shadow-lg shadow-purple-500/10">
+              <ShieldCheck className="w-6 h-6" />
             </div>
-
-            {adminError && (
-              <div className="p-3.5 rounded-2xl bg-red-950/40 border border-red-500/50 text-red-200 text-xs flex items-center gap-2.5 animate-in fade-in">
-                <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
-                <span>{adminError}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleAdminSubmit} className="space-y-4 text-xs">
-              <div>
-                <label className="text-slate-300 font-bold block mb-1.5">
-                  E-mail do Administrador: *
-                </label>
-                <div className="relative">
-                  <input
-                    type="email"
-                    required
-                    value={adminEmail}
-                    onChange={(e) => setAdminEmail(e.target.value)}
-                    placeholder="contatoviniciuscastro@gmail.com"
-                    className="w-full bg-[#181820] text-white pl-10 pr-3 py-3 rounded-xl border border-white/10 focus:outline-none focus:border-purple-500 text-sm font-mono"
-                  />
-                  <Mail className="w-4 h-4 text-purple-400 absolute left-3.5 top-3.5" />
-                </div>
-                <span className="text-[10px] text-slate-500 mt-1 block">
-                  E-mail mestre: contatoviniciuscastro@gmail.com
-                </span>
-              </div>
-
-              <div>
-                <label className="text-slate-300 font-bold block mb-1.5">
-                  Senha Administrativa: *
-                </label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    required
-                    value={adminPassword}
-                    onChange={(e) => setAdminPassword(e.target.value)}
-                    placeholder="Digite sua senha administrativa"
-                    className="w-full bg-[#181820] text-white pl-10 pr-10 py-3 rounded-xl border border-white/10 focus:outline-none focus:border-purple-500 text-sm font-mono"
-                  />
-                  <KeyRound className="w-4 h-4 text-purple-400 absolute left-3.5 top-3.5" />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3.5 top-3.5 text-slate-400 hover:text-white"
-                  >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-
-              <div className="p-3 bg-purple-950/20 border border-purple-500/20 rounded-xl text-[11px] text-slate-300 space-y-1">
-                <p className="font-semibold text-purple-300">🔐 Área de Segurança</p>
-                <p>
-                  Esta área permite configurar chaves da API Mercado Pago, Melhor Envio, gerenciar produtos, kits e editar todo o visual do site com prévia em tempo real.
-                </p>
-              </div>
-
-              <button
-                type="submit"
-                className="w-full py-3.5 rounded-2xl bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-sm shadow-xl shadow-purple-600/30 hover:scale-[1.01] active:scale-98 transition flex items-center justify-center gap-2"
-              >
-                <ShieldCheck className="w-4 h-4" />
-                <span>Entrar no Painel Administrativo</span>
-              </button>
-            </form>
+            <h3 className="text-xl font-black text-white">Acesso Lojista Seguro</h3>
+            <p className="text-sm leading-relaxed text-slate-300">
+              Para proteger seus pedidos e configurações, o painel administrativo
+              usa autenticação Supabase com verificação de permissões no servidor.
+            </p>
+            <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10 text-xs text-amber-100">
+              A entrada administrativa desta versão da loja está temporariamente
+              direcionada ao ambiente protegido de gerenciamento, enquanto
+              finalizamos a migração da plataforma principal.
+            </div>
+            <a
+              href="https://pulsar-tecnologia-site-git-security-server-api-phase1-qr-flow.vercel.app/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full py-3.5 rounded-2xl bg-purple-600 hover:bg-purple-500 text-white font-extrabold text-sm shadow-xl shadow-purple-600/30 transition flex items-center justify-center gap-2"
+            >
+              <ShieldCheck className="w-4 h-4" />
+              <span>Abrir painel administrativo seguro</span>
+            </a>
+            <p className="text-[11px] leading-relaxed text-slate-400">
+              A Vercel pode solicitar o acesso aprovado ao Preview. Em seguida,
+              selecione Acesso Lojista (Admin) e entre com seu e-mail e senha
+              cadastrados no Supabase.
+            </p>
           </div>
         )}
       </div>
