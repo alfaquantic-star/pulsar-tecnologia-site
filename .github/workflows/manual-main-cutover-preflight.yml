@@ -1,0 +1,25 @@
+name: Manual Production Cutover Preflight (Read Only)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-main:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Fetch the actual main branch (no changes)
+        run: git fetch --no-tags origin main
+      - name: Fail if main still uses legacy browser database access
+        run: node scripts/check-main-cutover.mjs --ref origin/main
+      - name: Explain remaining mandatory release gates
+        run: |
+          echo 'PASS only means main code architecture was checked.'
+          echo 'Do NOT apply shared RLS migration or enable payments based on this result.'
+          echo 'Backup, live session tests, payment sandbox, coordinated app/DB cutover and rollback remain mandatory.'
