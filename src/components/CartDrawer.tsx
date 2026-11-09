@@ -6,7 +6,6 @@ import {
   Minus, 
   ShoppingBag, 
   ArrowRight, 
-  Tag, 
   Truck, 
   ShieldCheck,
   Check
@@ -21,10 +20,7 @@ export const CartDrawer: React.FC = () => {
     removeFromCart,
     updateCartQuantity,
     cartSubtotal,
-    appliedCoupon,
     discountAmount,
-    applyCoupon,
-    removeCoupon,
     setIsCheckoutModalOpen,
     settings,
     selectedShipping,
@@ -35,7 +31,6 @@ export const CartDrawer: React.FC = () => {
     setDestinationCep
   } = useStore();
 
-  const [couponInput, setCouponInput] = useState('');
   const [showShippingCalc, setShowShippingCalc] = useState(false);
   const [cepLocal, setCepLocal] = useState(destinationCep);
 
@@ -45,14 +40,6 @@ export const CartDrawer: React.FC = () => {
   const finalTotal = Math.max(0, cartSubtotal - discountAmount + (selectedShipping ? selectedShipping.price : 0));
   const progressToFreeShipping = Math.min(100, (cartSubtotal / settings.freeShippingMinimum) * 100);
   const remainingForFreeShipping = Math.max(0, settings.freeShippingMinimum - cartSubtotal);
-
-  const handleApplyCoupon = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (couponInput.trim()) {
-      applyCoupon(couponInput);
-      setCouponInput('');
-    }
-  };
 
   const handleGoToCheckout = () => {
     setIsCartDrawerOpen(false);
@@ -197,37 +184,12 @@ export const CartDrawer: React.FC = () => {
         {/* Footer with Totals & Checkout */}
         {cart.length > 0 && (
           <div className="p-6 bg-[#181820] border-t border-white/10 space-y-4">
-            {/* Coupon field */}
-            {appliedCoupon ? (
-              <div className="flex items-center justify-between p-2.5 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-xs">
-                <span className="text-emerald-400 font-bold flex items-center gap-1.5">
-                  <Tag className="w-3.5 h-3.5" />
-                  Cupom <strong>{appliedCoupon}</strong> ativo (-R$ {discountAmount.toFixed(2)})
-                </span>
-                <button
-                  onClick={removeCoupon}
-                  className="text-slate-400 hover:text-white text-xs underline"
-                >
-                  Remover
-                </button>
-              </div>
-            ) : (
-              <form onSubmit={handleApplyCoupon} className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Cupom (ex: PULSAR10)"
-                  value={couponInput}
-                  onChange={(e) => setCouponInput(e.target.value)}
-                  className="flex-1 bg-[#121217] text-xs text-white uppercase px-3 py-2 rounded-xl border border-white/10 focus:outline-none focus:border-[#FF5500]"
-                />
-                <button
-                  type="submit"
-                  className="px-3.5 py-2 rounded-xl bg-white/10 hover:bg-[#FF5500] hover:text-black text-white text-xs font-bold transition"
-                >
-                  Aplicar
-                </button>
-              </form>
-            )}
+            {/* Coupon issuance and management are admin-only.
+                Customers have no coupon input or remove/change action. */}
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3 text-[11px] text-slate-400">
+              Promoções e cupons são administrados exclusivamente pela loja.
+              O total do pedido será confirmado no servidor antes do pagamento.
+            </div>
 
             {/* Calculations Breakdown */}
             <div className="space-y-1.5 text-xs text-slate-300">
