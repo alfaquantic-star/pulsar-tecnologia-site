@@ -320,6 +320,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (String(seller.id) !== sellerId) {
       return res.status(403).json({ error: 'Token não pertence ao vendedor de teste esperado.' });
     }
+    // Only a completed provider preference is safe to retrieve and reuse.
+    // A previous call may have timed out while the provider response was
+    // uncertain. Never query a "creating:" placeholder as a provider ID.
+    if (typeof row.mercado_pago_preference_id === 'string' &&
+        row.mercado_pago_preference_id.startsWith('creating:')) {
+      return res.status(409).json({ error: 'Preferência de teste ainda em processamento ou pendente de revisão. Não repita o pagamento.' });
+    }
     // Retry of an already-created preference is read-only.
     if (row.mercado_pago_preference_id) {
       const get = await fetch('https://api.mercadopago.com/checkout/preferences/' +
@@ -330,8 +337,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!get.ok) return res.status(503).json({ error: 'Preferência existente não pode ser consultada.' });
       const pref = await get.json();
       return res.status(200).json({ success: true, testOnly: true, reused: true,
-        id: row.id, preferenceId: pref.id, checkoutUrl: pref.init_point });
+        id: row.id, preferenceId: pref.id, checkoutUrl: pref.init_point,
+        total: draft.total_amount, discount: adminDiscountCents / 100 });
     }
+    // Validate preview host and prepared provider payload BEFORE claiming the
+    // database row; failed configuration must never strand a "creating:" lock.
+    const host = process.env.VERCEL_URL;
+    if (!host || !/^[a-z0-9.-]+\.vercel\.app$/.test(host)) {
+      return res.status(503).json({ error: 'URL de Preview indisponível.' });
+    }
+    if (!paymentPayload) return res.status(503).json({ error: 'Preferência de teste não validada.' });
+    const items = paymentPayload.items;
     // Prevent parallel attempts: one request claims a row before calling MP.
     const claim = await auth.db.from('orders')
       .update({ mercado_pago_preference_id: 'creating:' + randomUUID() })
@@ -342,14 +358,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(409).json({ error: 'Uma preferência já está sendo preparada. Tente consultar novamente.' });
     }
     const claimId = claim.data.mercado_pago_preference_id;
-    const host = process.env.VERCEL_URL;
-    if (!host || !/^[a-z0-9.-]+\.vercel\.app$/.test(host)) {
-      return res.status(503).json({ error: 'URL de Preview indisponível.' });
-    }
     // The Mercado Pago API still returns init_point for test preferences;
     // do not use obsolete sandbox_init_point links.
-    if (!paymentPayload) return res.status(503).json({ error: 'Preferência de teste não validada.' });
-    const items = paymentPayload.items;
     try {
       const mp = await fetch('https://api.mercadopago.com/checkout/preferences', {
         method: 'POST',
@@ -386,7 +396,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({
         success: true, testOnly: true, id: row.id,
         orderNumber: row.order_number, preferenceId: pref.id,
-        checkoutUrl: pref.init_point, total: quote.total, paymentStatus: 'pending'
+        checkoutUrl: pref.init_point, total: draft.total_amount,
+        discount: adminDiscountCents / 100, paymentStatus: 'pending'
       });
     } catch {
       // Do not clear the claim if the upstream call outcome is uncertain.
