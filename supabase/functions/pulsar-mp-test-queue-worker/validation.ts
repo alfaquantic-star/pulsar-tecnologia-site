@@ -23,7 +23,7 @@ export function validateQueuedSandboxPayment(i: QueuedPaymentInput):
       String(seller.id) !== sellerId ||
       String(payment.payer?.id) !== buyerId ||
       payment.currency_id !== 'BRL' ||
-      (typeof payment.live_mode !== 'boolean'))
+      payment.live_mode !== false)
     return 'invalid';
   if (payment.status !== 'approved') return 'not_approved';
   const reference = payment.external_reference;
