@@ -92,6 +92,7 @@ export const CheckoutModal: React.FC = () => {
   const [testOrderResult, setTestOrderResult] = useState<{
     success: boolean; message: string; orderNumber?: string; reused?: boolean;
     checkoutUrl?: string; paymentStatus?: string;
+    subtotal?: number; discount?: number; total?: number; shippingPrice?: number;
   } | null>(null);
 
   // Customer Form
@@ -328,7 +329,11 @@ export const CheckoutModal: React.FC = () => {
         orderNumber: result.orderNumber,
         reused: result.reused,
         checkoutUrl: result.checkoutUrl,
-        paymentStatus: result.paymentStatus
+        paymentStatus: result.paymentStatus,
+        subtotal: typeof result.subtotal === 'number' ? result.subtotal : undefined,
+        discount: typeof result.discount === 'number' ? result.discount : undefined,
+        total: typeof result.total === 'number' ? result.total : undefined,
+        shippingPrice: typeof result.shipping?.price === 'number' ? result.shipping.price : undefined
       });
       setAdminCouponDiscount(response.ok && typeof result.discount === 'number' ? result.discount : null);
     } catch (err) {
@@ -1053,6 +1058,16 @@ export const CheckoutModal: React.FC = () => {
                           <div className={testOrderResult.success ? 'text-emerald-300' : 'text-amber-300'}>
                             <p>{testOrderResult.message}</p>
                             {testOrderResult.orderNumber && <p>Pedido: {testOrderResult.orderNumber}</p>}
+                            {testOrderResult.success && typeof testOrderResult.total === 'number' && (
+                              <div className="mt-2 rounded-lg border border-white/15 p-3 space-y-1 text-xs" role="status">
+                                <p>Subtotal verificado: R$ {testOrderResult.subtotal?.toFixed(2) ?? '—'}</p>
+                                <p>Desconto autorizado no servidor: R$ {(testOrderResult.discount ?? 0).toFixed(2)}</p>
+                                {typeof testOrderResult.shippingPrice === 'number' &&
+                                  <p>Frete verificado: R$ {testOrderResult.shippingPrice.toFixed(2)}</p>}
+                                <p className="text-base font-extrabold">Total confirmado para teste: R$ {testOrderResult.total.toFixed(2)}</p>
+                                <p className="text-amber-200">Apenas ambiente de teste. Não confirma pagamento real.</p>
+                              </div>
+                            )}
                             {testOrderResult.checkoutUrl && (
                               <a target="_blank" rel="noopener noreferrer" href={testOrderResult.checkoutUrl}
                                 className="underline block mt-2">Abrir Checkout Pro de TESTE</a>
