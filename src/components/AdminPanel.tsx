@@ -38,12 +38,14 @@ import {
   Eye,
   EyeOff,
   Lock,
-  Wifi
+  Wifi,
+  TicketPercent
 } from 'lucide-react';
 import { useStore } from '../context/StoreContext';
 import { Kit, Order, OrderPaymentStatus, OrderShippingStatus, Product } from '../types';
 import { getSupabaseCredentials, saveSupabaseCredentials } from '../lib/supabase';
 import { testMercadoPagoConnection } from '../services/mercadopago';
+import { AdminCoupons } from './AdminCoupons';
 
 // Helper to load and optimize image files uploaded from user's computer
 const readImageFileAsDataUrl = (file: File): Promise<string> => {
@@ -109,7 +111,7 @@ export const AdminPanel: React.FC = () => {
     testSupabase
   } = useStore();
 
-  const [adminTab, setAdminTab] = useState<'dashboard' | 'products' | 'kits' | 'orders' | 'customers' | 'cms' | 'integrations' | 'supabase'>('dashboard');
+  const [adminTab, setAdminTab] = useState<'dashboard' | 'products' | 'kits' | 'orders' | 'customers' | 'coupons' | 'cms' | 'integrations' | 'supabase'>('dashboard');
   const [orderFilter, setOrderFilter] = useState<string>('all');
   const [searchOrderText, setSearchOrderText] = useState('');
 
@@ -876,6 +878,17 @@ export const AdminPanel: React.FC = () => {
             </button>
 
             <button
+              onClick={() => setAdminTab('coupons')}
+              className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition ${
+                adminTab === 'coupons' ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30'
+                  : 'text-slate-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <TicketPercent className="w-4 h-4" />
+              <span>Cupons e Promoções</span>
+            </button>
+
+            <button
               onClick={() => setAdminTab('cms')}
               className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl transition ${
                 adminTab === 'cms'
@@ -936,6 +949,8 @@ export const AdminPanel: React.FC = () => {
       {/* Main Admin Area */}
       <main className="flex-1 p-6 sm:p-10 overflow-y-auto space-y-8">
         {/* DASHBOARD TAB */}
+        {adminTab === 'coupons' && <AdminCoupons />}
+
         {adminTab === 'dashboard' && (
           <div className="space-y-8">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
