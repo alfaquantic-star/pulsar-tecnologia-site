@@ -61,6 +61,29 @@ export const CheckoutModal: React.FC = () => {
     lines?: Array<{ id: string; name: string; quantity: number; unitPrice: number; total: number }>;
   } | null>(null);
   const [testOrderKey, setTestOrderKey] = useState<string | null>(null);
+  const [adminCouponCode, setAdminCouponCode] = useState('');
+  const [adminCouponOptions, setAdminCouponOptions] = useState<Array<{ code: string; is_active: boolean }>>([]);
+  const [adminCouponsMessage, setAdminCouponsMessage] = useState('');
+  const [adminCouponDiscount, setAdminCouponDiscount] = useState<number | null>(null);
+  const loadAdminCoupons = async () => {
+    setAdminCouponsMessage('');
+    try {
+      const { getSupabaseClient } = await import('../lib/supabase');
+      const client = getSupabaseClient();
+      const { data: { session } } = client
+        ? await client.auth.getSession() : { data: { session: null } };
+      if (!session?.access_token) throw Error('Faça login como administrador.');
+      const response = await fetch('/api/admin/catalog?table=coupons', {
+        headers: { Authorization: 'Bearer ' + session.access_token }, cache: 'no-store'
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw Error(payload.error || 'Não foi possível carregar cupons.');
+      setAdminCouponOptions(Array.isArray(payload.data) ? payload.data : []);
+    } catch (err) {
+      setAdminCouponOptions([]);
+      setAdminCouponsMessage(err instanceof Error ? err.message : 'Consulta de cupons indisponível.');
+    }
+  };
   const [verifyTestOrderNumber, setVerifyTestOrderNumber] = useState('');
   const [verifyTestPaymentId, setVerifyTestPaymentId] = useState('');
   const [isVerifyingTestPayment, setIsVerifyingTestPayment] = useState(false);
@@ -93,7 +116,9 @@ export const CheckoutModal: React.FC = () => {
   useEffect(() => {
     // Prevent showing a server quote for a different cart/CEP/shipping option.
     setServerCartResult(null);
-  }, [cart, zipCode, selectedShipping?.id, appliedCoupon]);
+    setAdminCouponDiscount(null);
+    setTestOrderKey(null);
+  }, [cart, zipCode, selectedShipping?.id, appliedCoupon, adminCouponCode]);
 
 
   // Credit Card Form
@@ -263,8 +288,8 @@ export const CheckoutModal: React.FC = () => {
       setTestOrderResult({ success: false, message: 'Preencha e valide endereço, comprador e frete para o teste.' });
       return;
     }
-    if (appliedCoupon) {
-      setTestOrderResult({ success: false, message: 'Retire o cupom no carrinho: descontos ainda não estão autorizados no servidor.' });
+    if (action !== 'stage_order' && adminCouponCode) {
+      setTestOrderResult({ success: false, message: 'Desconto do Admin só pode ser testado em pedido pendente, sem pagamento.' });
       return;
     }
     setIsCreatingTestOrder(true);
@@ -284,6 +309,7 @@ export const CheckoutModal: React.FC = () => {
         },
         body: JSON.stringify({
           action, idempotencyKey,
+          ...(action === 'stage_order' && adminCouponCode ? { adminCouponCode } : {}),
           items: cart.map(item => ({
             ...(item.isKit ? { kitId: item.kitId } : { productId: item.productId }),
             quantity: item.quantity
@@ -306,6 +332,7 @@ export const CheckoutModal: React.FC = () => {
         checkoutUrl: result.checkoutUrl,
         paymentStatus: result.paymentStatus
       });
+      setAdminCouponDiscount(response.ok && typeof result.discount === 'number' ? result.discount : null);
     } catch (err) {
       setTestOrderResult({
         success: false, message: err instanceof Error ? err.message : 'Falha no teste do pedido.'
@@ -964,6 +991,24 @@ export const CheckoutModal: React.FC = () => {
                       <div className="p-3 space-y-3 rounded-xl border border-purple-500/40 bg-purple-950/20 text-xs">
                         <p className="font-bold text-purple-200">Ferramentas do administrador — somente Preview</p>
                         <p className="text-slate-400">O primeiro botão registra um pedido pendente no Supabase, sem cobrança nem reserva de estoque. Use somente dados de teste.</p>
+                        <div className="rounded-lg border border-white/15 bg-black/20 p-3 space-y-2">
+                          <p className="font-bold text-purple-200">Autorizar cupom somente para pedido de teste</p>
+                          <p className="text-slate-400">A autorização ocorre no servidor. Clientes não conseguem selecionar cupons; o desconto não cria cobrança.</p>
+                          <button type="button" onClick={() => void loadAdminCoupons()}
+                            className="text-xs underline text-purple-200">Carregar cupons ativos</button>
+                          <select aria-label="Cupom administrativo de teste" value={adminCouponCode}
+                            onChange={e => { setAdminCouponCode(e.target.value); setTestOrderResult(null); }}
+                            className="block w-full rounded-lg border border-white/20 bg-slate-900 text-white p-2">
+                            <option value="">Sem desconto</option>
+                            {adminCouponOptions.filter(c => c.is_active).map(c =>
+                              <option key={c.code} value={c.code}>{c.code}</option>)}
+                          </select>
+                          {adminCouponsMessage && <p role="alert" className="text-amber-200">{adminCouponsMessage}</p>}
+                          {adminCouponDiscount !== null && <p className="text-emerald-200">
+                            Desconto autorizado pelo servidor no último teste: R$ {adminCouponDiscount.toFixed(2)}
+                          </p>}
+                        </div>
+
                         <button type="button" disabled={isCreatingTestOrder}
                           onClick={() => void handleCreateTestOrder('stage_order')}
                           className="w-full bg-purple-600/30 border border-purple-400/50 text-purple-100 p-3 rounded-lg font-bold disabled:opacity-50">

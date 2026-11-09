@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { randomUUID } from 'node:crypto';
 import { requireAdmin, verifyCustomerIdentity, adminDatabase } from '../_lib/admin-auth.js';
 import { verifyCheckout, CheckoutError } from '../_lib/verify-checkout.js';
+import { calculateAdminCouponDiscountCents } from '../_lib/coupons.js';
 import { buildPendingOrderDraft } from '../_lib/pending-order.js';
 import { merchantOrderMatchesPayment } from '../_lib/mp-merchant-order.js';
 import { isConfirmedTestUserPayment } from '../_lib/mp-test-user-identity.js';
@@ -185,6 +186,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (body.coupon && String(body.coupon).trim()) {
       return res.status(422).json({ error: 'Cupons ainda não autorizados pelo backend. Retire o cupom para testar.' });
     }
+    // Only an authenticated Admin can authorize a coupon for a staged,
+    // UNPAID Preview order. Never apply one to customer staging or payments.
+    const rawAdminCouponCode = body.adminCouponCode;
+    if (rawAdminCouponCode !== undefined && rawAdminCouponCode !== null &&
+        (typeof rawAdminCouponCode !== 'string' || !/^[A-Z0-9_-]{4,24}$/.test(rawAdminCouponCode))) {
+      return res.status(400).json({ error: 'Código administrativo de cupom inválido.' });
+    }
+    const adminCouponCode: string = typeof rawAdminCouponCode === 'string' ? rawAdminCouponCode : '';
+    if (adminCouponCode && action !== 'stage_order') {
+      return res.status(403).json({ error: 'Desconto administrativo só pode ser usado em pedido pendente de TESTE, sem pagamento.' });
+    }
     const key = body.idempotencyKey;
     if (typeof key !== 'string' || !/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(key)) {
       return res.status(400).json({ error: 'Identificador de tentativa inválido.' });
@@ -207,6 +219,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           verifiedCustomer!.email?.trim().toLowerCase()) {
       return res.status(403).json({ error: 'O e-mail do pedido precisa corresponder à conta verificada.' });
     }
+    // Admin-selected coupon is fetched and checked using privileged server DB.
+    // Its discount never comes from a client-entered amount.
+    let adminDiscountCents = 0;
+    if (adminCouponCode) {
+      const { data: coupon, error: couponError } = await auth.db
+        .from('pulsar_admin_coupons')
+        .select('discount_type,discount_value,is_active,starts_at,expires_at')
+        .eq('code', adminCouponCode)
+        .maybeSingle();
+      if (couponError) return res.status(503).json({ error: 'Regras de cupons indisponíveis.' });
+      if (!coupon) return res.status(422).json({ error: 'Cupom administrativo não encontrado.' });
+      try {
+        adminDiscountCents = calculateAdminCouponDiscountCents(coupon, Math.round(quote.subtotal * 100));
+      } catch {
+        return res.status(422).json({ error: 'Cupom inativo, expirado ou com desconto inválido.' });
+      }
+    }
     // The browser never determines monetary amounts.
     const verified = {
       lines: quote.lines.map(line => ({
@@ -218,7 +247,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         service: quote.shipping.service,
         priceCents: Math.round(quote.shipping.price * 100)
       },
-      discountCents: 0,
+      discountCents: adminDiscountCents,
       customer: body.customer,
       address: body.address
     };
@@ -253,7 +282,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({
         success: true, testOnly: true, paymentCreated: false,
         id: row.id, orderNumber: row.order_number, reused: wasReused,
-        subtotal: quote.subtotal, shipping: quote.shipping, total: quote.total,
+        subtotal: quote.subtotal, shipping: quote.shipping,
+        discount: adminDiscountCents / 100,
+        total: (Math.round(quote.total * 100) - adminDiscountCents) / 100,
         paymentStatus: row.payment_status,
         message: 'Pedido pendente de teste registrado. Nenhuma cobrança criada.'
       });
