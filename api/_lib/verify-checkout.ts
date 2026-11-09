@@ -18,6 +18,14 @@ export async function verifyCheckout(body: any) {
       !Array.isArray(body.items) || body.items.length < 1 || body.items.length > 20) {
     throw new CheckoutError(400, 'O carrinho deve conter de 1 a 20 itens.');
   }
+  // No customer can submit a coupon or price reduction. The browser must
+  // never authorize discounts, even with a modified request payload.
+  const attemptedCoupon = typeof body.coupon === 'string' && body.coupon.trim().length > 0;
+  const attemptedDiscount = body.discountAmount !== undefined &&
+    body.discountAmount !== null && Number(body.discountAmount) !== 0;
+  if (attemptedCoupon || attemptedDiscount) {
+    throw new CheckoutError(403, 'Cupons e descontos são exclusivos do administrador e exigem autorização do servidor.');
+  }
   const requested: RequestedItem[] = [];
   for (const item of body.items) {
     if (!item || typeof item !== 'object' || Array.isArray(item) ||
@@ -144,13 +152,12 @@ export async function verifyCheckout(body: any) {
     }
     // Preview mode does NOT authorize coupon discounts. Hardcoded frontend
     // coupon names are not proof of a valid promotion or eligibility.
-    const couponSubmitted = typeof body.coupon === 'string' ? body.coupon.trim().toUpperCase() : '';
     const shippingCents = shipping ? cents(shipping.price) : 0;
     return {
       validated:true, estimateOnly:true, canPay:false,
       lines, subtotal:subtotalCents/100,
       shipping, discount:0, total:(subtotalCents + shippingCents)/100,
-      couponStatus:couponSubmitted ? 'not_yet_authorized' : 'none',
+      couponStatus:'none',
       message:shipping
         ? 'Subtotal e frete recalculados no servidor. Cupons ainda não autorizados e pagamento bloqueado.'
         : 'Preços e estoque verificados no Supabase. Frete, cupons e pagamento ainda requerem validação final no servidor.'
