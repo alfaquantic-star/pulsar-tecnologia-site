@@ -58,7 +58,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const { data: existing, error: existingError } = await coupons.select('discount_type,discount_value,starts_at,expires_at').eq('id',id).maybeSingle();
       if (existingError || !existing) return res.status(404).json({ error: 'Cupom não encontrado.' });
       try {
-        validateCouponPayload({ ...existing, ...payload }, 'create');
+        validateCouponPayload({ ...existing, discount_value: Number(existing.discount_value), ...payload }, 'create');
       } catch {
         return res.status(400).json({ error: 'Valor percentual ou datas incompatíveis.' });
       }
