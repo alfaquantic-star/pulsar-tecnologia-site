@@ -239,6 +239,8 @@ export const AdminPanel: React.FC = () => {
   const [checkoutReadiness, setCheckoutReadiness] = useState<{
     readyForPayments: boolean;
     checks: Record<string, boolean>;
+    catalogAuditAvailable?: boolean;
+    catalogKitIssues?: Array<{ kitId: string; reason: string }>;
     message: string;
   } | null>(null);
 
@@ -2245,6 +2247,20 @@ export const AdminPanel: React.FC = () => {
                         </span>
                       </div>
                     ))}
+                    {checkoutReadiness.catalogKitIssues && checkoutReadiness.catalogKitIssues.length > 0 && (
+                      <div role="alert" className="rounded-xl border border-amber-500/40 bg-amber-950/20 p-3 space-y-1">
+                        <p className="font-bold text-amber-200">Atenção: kits precisam de revisão antes das vendas</p>
+                        {checkoutReadiness.catalogKitIssues.map((issue, index) => (
+                          <p key={issue.kitId + '-' + index} className="text-amber-100">
+                            Kit {issue.kitId}: {issue.reason === 'variant_conflict'
+                              ? 'cor anunciada diferente do produto vinculado'
+                              : issue.reason === 'missing_product'
+                                ? 'produto vinculado indisponível'
+                                : 'composição ou quantidade inválida'}
+                          </p>
+                        ))}
+                      </div>
+                    )}
                     <p className="text-amber-200">{checkoutReadiness.message}</p>
                   </div>
                 )}
