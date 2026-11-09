@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { auditActiveKitMappings } from '../_lib/catalog-launch-audit.js';
 import { verifyAdminIdentity, adminDatabase } from '../_lib/admin-auth.js';
 import { createHmac, randomUUID } from 'node:crypto';
 import { verifyQueuedTestPayment } from '../_lib/mp-queue-payment-verification.js';
@@ -309,6 +310,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const db = adminDatabase();
       const schema = await db.from('orders')
         .select('checkout_idempotency_key,mercado_pago_preference_id,shipping_service_id').limit(0);
+      const [productRows, kitRows] = await Promise.all([
+        db.from('products').select('id,name,is_active'),
+        db.from('kits').select('id,name,is_active,items')
+      ]);
+      const catalogAudit = productRows.error || kitRows.error
+        ? null
+        : auditActiveKitMappings(productRows.data || [], kitRows.data || []);
       const checks = {
         previewDeployment: process.env.VERCEL_ENV === 'preview',
         mercadoPagoTokenConfigured: Boolean(process.env.MERCADO_PAGO_ACCESS_TOKEN?.trim()),
@@ -317,12 +325,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         shippingOriginConfigured: /^\d{8}$/.test((process.env.SHIPPING_ORIGIN_CEP || '').replace(/\D/g,'')),
         shippingSandboxEnabled: process.env.MELHOR_ENVIO_SANDBOX === 'true',
         idempotencySchemaPrepared: !schema.error,
+        catalogKitMappingsValid: catalogAudit?.valid === true,
         paymentPreferenceFlowVerified: false,
         webhookOrderAssociationVerified: false,
         productionRlsCutoverVerified: false
       };
       return res.status(200).json({
         readyForPayments: false, checks,
+        catalogKitIssues: catalogAudit ? catalogAudit.issues : [],
+        catalogAuditAvailable: catalogAudit !== null,
         message: 'Diagnóstico somente leitura. Nenhum pedido, pagamento ou mudança de permissão foi realizado.'
       });
     }
