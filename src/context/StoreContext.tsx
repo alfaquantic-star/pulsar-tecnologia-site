@@ -311,15 +311,10 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     0
   );
 
-  // Discount Calculation
-  let discountAmount = 0;
-  if (appliedCoupon === 'PULSAR10') {
-    discountAmount = cartSubtotal * 0.10;
-  } else if (appliedCoupon === 'CLIENTE5') {
-    discountAmount = cartSubtotal * 0.05;
-  } else if (appliedCoupon === 'FRETEGRATIS' && selectedShipping) {
-    discountAmount = Number(selectedShipping.price) || 0;
-  }
+  // Discounts are never calculated from customer-controlled browser state.
+  // Admin-controlled coupons will only be honored when authorized and
+  // recalculated by the server after the secure coupon manager is released.
+  const discountAmount = 0;
 
   // Cart operations
   const addToCart = (itemData: Omit<CartItem, 'cartItemId'>) => {
@@ -387,30 +382,18 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setCart([]);
   };
 
-  const applyCoupon = (code: string): boolean => {
-    const formatted = code.trim().toUpperCase();
-    if (formatted === 'PULSAR10') {
-      setAppliedCoupon('PULSAR10');
-      showToast('Cupom PULSAR10 aplicado: 10% de desconto!', 'success');
-      return true;
-    }
-    if (formatted === 'CLIENTE5') {
-      setAppliedCoupon('CLIENTE5');
-      showToast('Cupom CLIENTE5 aplicado: 5% de desconto!', 'success');
-      return true;
-    }
-    if (formatted === 'FRETEGRATIS') {
-      setAppliedCoupon('FRETEGRATIS');
-      showToast('Cupom FRETEGRATIS aplicado!', 'success');
-      return true;
-    }
-    showToast('Cupom inválido ou expirado.', 'error');
+  const applyCoupon = (_code: string): boolean => {
+    // Safe compatibility method: no client, including users who manipulate
+    // React state, is able to grant a financial discount in the browser.
+    setAppliedCoupon(null);
+    showToast('Cupons só podem ser gerenciados pelo administrador. Nenhum desconto foi aplicado.', 'info');
     return false;
   };
 
   const removeCoupon = () => {
+    // Historical browser coupons are invalid. Customer cannot change
+    // server-authorized discounts; reset legacy local display if present.
     setAppliedCoupon(null);
-    showToast('Cupom removido.', 'info');
   };
 
   // Melhor Envio Real API Simulator with Brazilian Logistics
