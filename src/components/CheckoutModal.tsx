@@ -288,10 +288,8 @@ export const CheckoutModal: React.FC = () => {
       setTestOrderResult({ success: false, message: 'Preencha e valide endereço, comprador e frete para o teste.' });
       return;
     }
-    if (action !== 'stage_order' && adminCouponCode) {
-      setTestOrderResult({ success: false, message: 'Desconto do Admin só pode ser testado em pedido pendente, sem pagamento.' });
-      return;
-    }
+    // Only the dedicated TEST seller can process a preference with
+    // admin-authorized coupon. The backend enforces the same restriction.
     setIsCreatingTestOrder(true);
     try {
       const { getSupabaseClient } = await import('../lib/supabase');
@@ -309,7 +307,7 @@ export const CheckoutModal: React.FC = () => {
         },
         body: JSON.stringify({
           action, idempotencyKey,
-          ...(action === 'stage_order' && adminCouponCode ? { adminCouponCode } : {}),
+          ...(adminCouponCode ? { adminCouponCode } : {}),
           items: cart.map(item => ({
             ...(item.isKit ? { kitId: item.kitId } : { productId: item.productId }),
             quantity: item.quantity
@@ -993,7 +991,7 @@ export const CheckoutModal: React.FC = () => {
                         <p className="text-slate-400">O primeiro botão registra um pedido pendente no Supabase, sem cobrança nem reserva de estoque. Use somente dados de teste.</p>
                         <div className="rounded-lg border border-white/15 bg-black/20 p-3 space-y-2">
                           <p className="font-bold text-purple-200">Autorizar cupom somente para pedido de teste</p>
-                          <p className="text-slate-400">A autorização ocorre no servidor. Clientes não conseguem selecionar cupons; o desconto não cria cobrança.</p>
+                          <p className="text-slate-400">A autorização ocorre no servidor. O Admin pode criar pedido sem pagamento ou preferência exclusivamente com o vendedor de TESTE. Clientes não conseguem selecionar cupons.</p>
                           <button type="button" onClick={() => void loadAdminCoupons()}
                             className="text-xs underline text-purple-200">Carregar cupons ativos</button>
                           <select aria-label="Cupom administrativo de teste" value={adminCouponCode}

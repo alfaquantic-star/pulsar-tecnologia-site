@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { requireAdmin, verifyCustomerIdentity, adminDatabase } from '../_lib/admin-auth.js';
 import { verifyCheckout, CheckoutError } from '../_lib/verify-checkout.js';
 import { calculateAdminCouponDiscountCents } from '../_lib/coupons.js';
+import { buildDiscountedTestPreference } from '../_lib/mp-discounted-preference.js';
 import { buildPendingOrderDraft } from '../_lib/pending-order.js';
 import { merchantOrderMatchesPayment } from '../_lib/mp-merchant-order.js';
 import { isConfirmedTestUserPayment } from '../_lib/mp-test-user-identity.js';
@@ -186,16 +187,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (body.coupon && String(body.coupon).trim()) {
       return res.status(422).json({ error: 'Cupons ainda não autorizados pelo backend. Retire o cupom para testar.' });
     }
-    // Only an authenticated Admin can authorize a coupon for a staged,
-    // UNPAID Preview order. Never apply one to customer staging or payments.
+    // Only authenticated Admin Preview actions may authorize a coupon.
+    // create_test_preference uses DEDICATED test seller credentials, never real customer payments.
     const rawAdminCouponCode = body.adminCouponCode;
     if (rawAdminCouponCode !== undefined && rawAdminCouponCode !== null &&
         (typeof rawAdminCouponCode !== 'string' || !/^[A-Z0-9_-]{4,24}$/.test(rawAdminCouponCode))) {
       return res.status(400).json({ error: 'Código administrativo de cupom inválido.' });
     }
     const adminCouponCode: string = typeof rawAdminCouponCode === 'string' ? rawAdminCouponCode : '';
-    if (adminCouponCode && action !== 'stage_order') {
-      return res.status(403).json({ error: 'Desconto administrativo só pode ser usado em pedido pendente de TESTE, sem pagamento.' });
+    if (adminCouponCode && action !== 'stage_order' && action !== 'create_test_preference') {
+      return res.status(403).json({ error: 'Desconto administrativo permitido apenas no teste autenticado pelo Admin.' });
     }
     const key = body.idempotencyKey;
     if (typeof key !== 'string' || !/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(key)) {
@@ -252,6 +253,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       address: body.address
     };
     const draft = buildPendingOrderDraft(verified, key, customerStage ? verifiedCustomer!.id : undefined);
+    // Validate the exact provider item allocation BEFORE inserting a pending
+    // order. A provider amount must equal the server's immutable order total.
+    const paymentPayload = action === 'create_test_preference'
+      ? buildDiscountedTestPreference(
+          verified.lines,
+          { service: verified.shipping.service, priceCents: verified.shipping.priceCents },
+          adminDiscountCents
+        )
+      : null;
+    if (paymentPayload && paymentPayload.totalCents !== Math.round(draft.total_amount * 100)) {
+      return res.status(422).json({ error: 'Diferença entre total do pedido e preferência de teste.' });
+    }
     const { data: inserted, error: insertError } = await auth.db.from('orders')
       .insert(draft).select('id,order_number,customer_id,checkout_payload_hash,payment_status,mercado_pago_preference_id')
       .single();
@@ -335,12 +348,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     // The Mercado Pago API still returns init_point for test preferences;
     // do not use obsolete sandbox_init_point links.
-    const items = quote.lines.map(line => ({
-      id: line.id, title: line.name.slice(0, 255),
-      quantity: line.quantity, currency_id: 'BRL', unit_price: line.unitPrice
-    }));
-    items.push({ id: 'shipping', title: 'Frete ' + quote.shipping.service,
-      quantity: 1, currency_id: 'BRL', unit_price: quote.shipping.price });
+    if (!paymentPayload) return res.status(503).json({ error: 'Preferência de teste não validada.' });
+    const items = paymentPayload.items;
     try {
       const mp = await fetch('https://api.mercadopago.com/checkout/preferences', {
         method: 'POST',

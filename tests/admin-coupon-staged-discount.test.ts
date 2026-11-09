@@ -19,10 +19,10 @@ test('inactive, future or expired coupons never authorize discounts',()=>{
   assert.throws(()=>calculateAdminCouponDiscountCents(coupon('percent',101),1000,now));
   assert.throws(()=>calculateAdminCouponDiscountCents(coupon('fixed',0),1000,now));
 });
-test('authorization requires admin in preview and never enables customer or payment checkout',()=>{
+test('authorization requires admin in preview and never enables public customer or live checkout',()=>{
   const endpoint=read('api/mercadopago/create-preference.ts');
   assert.match(endpoint,/const auth = customerStage[\s\S]*?requireAdmin\(req\)/);
-  assert.match(endpoint,/adminCouponCode && action !== 'stage_order'/);
+  assert.match(endpoint,/adminCouponCode && action !== 'stage_order' && action !== 'create_test_preference'/);
   assert.match(endpoint,/\.from\('pulsar_admin_coupons'\)/);
   assert.match(endpoint,/discountCents: adminDiscountCents/);
   assert.match(endpoint,/calculateAdminCouponDiscountCents\(coupon, Math\.round\(quote\.subtotal \* 100\)\)/);
@@ -35,7 +35,7 @@ test('test order authorization UI stays within admin tools only',()=>{
   const ui=read('src/components/CheckoutModal.tsx');
   assert.match(ui,/currentUser\?\.role === 'admin' && \(/);
   assert.match(ui,/adminCouponCode/);
-  assert.match(ui,/action === 'stage_order' && adminCouponCode/);
+  assert.match(ui,/adminCouponCode \? \{ adminCouponCode \} : \{\}/);
   assert.match(ui,/Carregar cupons ativos/);
   assert.doesNotMatch(read('src/components/CartDrawer.tsx'),/couponInput|handleApplyCoupon/);
 });
