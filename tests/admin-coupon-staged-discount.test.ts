@@ -36,6 +36,6 @@ test('test order authorization UI stays within admin tools only',()=>{
   assert.match(ui,/currentUser\?\.role === 'admin' && \(/);
   assert.match(ui,/adminCouponCode/);
   assert.match(ui,/action === 'stage_order' && adminCouponCode/);
-  assert.match(ui,/Cupons? ativo/);
+  assert.match(ui,/Carregar cupons ativos/);
   assert.doesNotMatch(read('src/components/CartDrawer.tsx'),/couponInput|handleApplyCoupon/);
 });
