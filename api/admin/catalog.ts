@@ -1,7 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { adminDatabase, requireAdmin } from '../_lib/admin-auth.js';
+import { validateCouponPayload } from '../_lib/coupons.js';
 
-const allowedTables = new Set(['products', 'kits']);
+const allowedTables = new Set(['products', 'kits', 'coupons']);
 const allowedFields: Record<string, Set<string>> = {
   products: new Set(['id', 'name', 'slug', 'short_description', 'detailed_description',
     'sale_price', 'promo_price', 'cost', 'stock', 'track_stock', 'sku', 'category',
@@ -28,6 +29,48 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const table = String(req.query.table || '');
     if (!allowedTables.has(table)) return res.status(400).json({ code: 'invalid_table', error: 'Invalid resource' });
     const db = adminDatabase();
+    if (table === 'coupons') {
+      const id = String(req.query.id || '');
+      if (id && !/^[0-9a-f-]{36}$/i.test(id)) return res.status(400).json({ error: 'ID de cupom inválido.' });
+      const coupons = db.from('pulsar_admin_coupons');
+      if (req.method === 'GET') {
+        const { data, error } = await coupons.select('*').order('created_at', { ascending: false }).limit(100);
+        if (error) return res.status(503).json({ code: 'coupon_storage_unavailable', error: 'Gestão de cupons ainda não disponível no servidor.' });
+        return res.status(200).json({ data });
+      }
+      if (req.method === 'DELETE') {
+        if (!id) return res.status(400).json({ error: 'Selecione o cupom.' });
+        const { error } = await coupons.delete().eq('id', id);
+        return error ? res.status(503).json({ error: 'Não foi possível excluir o cupom.' }) : res.status(200).json({ ok: true });
+      }
+      let payload;
+      try { payload = validateCouponPayload(req.body, req.method === 'POST' ? 'create' : 'update'); }
+      catch { return res.status(400).json({ code: 'invalid_coupon', error: 'Confira código, desconto, tipo e validade do cupom.' }); }
+      if (req.method === 'POST') {
+        if (payload.is_active !== false) {
+          // Promotion activation remains opt-in and admin-authorized.
+          payload.is_active = false;
+        }
+        const { data, error } = await coupons.insert(payload).select('*').single();
+        return error ? res.status(409).json({ error: 'Cupom duplicado ou dados inválidos.' }) : res.status(201).json({ data });
+      }
+      if (!id) return res.status(400).json({ error: 'Selecione o cupom.' });
+      const { data: existing, error: existingError } = await coupons.select('discount_type,discount_value,starts_at,expires_at').eq('id',id).maybeSingle();
+      if (existingError || !existing) return res.status(404).json({ error: 'Cupom não encontrado.' });
+      try {
+        validateCouponPayload({
+          ...existing,
+          discount_value: Number(existing.discount_value),
+          starts_at: existing.starts_at ? new Date(existing.starts_at).toISOString() : null,
+          expires_at: existing.expires_at ? new Date(existing.expires_at).toISOString() : null,
+          ...payload
+        }, 'create');
+      } catch {
+        return res.status(400).json({ error: 'Valor percentual ou datas incompatíveis.' });
+      }
+      const { data, error } = await coupons.update(payload).eq('id',id).select('*').maybeSingle();
+      return error || !data ? res.status(409).json({ error: 'Não foi possível atualizar o cupom.' }) : res.status(200).json({ data });
+    }
     const id = String(req.query.id || '');
     if (id.length > 128) return res.status(400).json({ error: 'Invalid ID' });
 
