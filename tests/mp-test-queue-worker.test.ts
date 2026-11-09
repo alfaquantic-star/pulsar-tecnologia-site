@@ -57,6 +57,7 @@ test('non-approved and unusable events never approve', () => {
   const x=make();
   assert.equal(validateQueuedSandboxPayment({...x,payment:{...x.payment,status:'pending'}}),'not_approved');
   assert.equal(validateQueuedSandboxPayment({...x,payment:{...x.payment,currency_id:'USD'}}),'invalid');
+  assert.equal(validateQueuedSandboxPayment({...x,payment:{...x.payment,live_mode:true}}),'invalid');
   assert.equal(validateQueuedSandboxPayment({...x,order:null}),'invalid');
 });
 
