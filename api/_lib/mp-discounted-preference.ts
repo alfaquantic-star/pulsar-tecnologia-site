@@ -39,13 +39,16 @@ export function buildDiscountedTestPreference(
   }
   // Allocate a proportional discount in cents, deterministically, with a
   // remainder that cannot exceed each line's verified amount.
-  let allocated = 0;
-  const discounts = totals.map((line, i) => {
-    if (i === totals.length - 1) return discountCents - allocated;
-    const part = Math.floor(discountCents * line / subtotalCents);
-    allocated += part;
-    return part;
-  });
+  const discounts = totals.map(line => Math.floor(discountCents * line / subtotalCents));
+  let remainingCents = discountCents - discounts.reduce((sum, n) => sum + n, 0);
+  // Largest-remainder style adjustment, never allocating beyond a line total.
+  for (let i = 0; i < totals.length && remainingCents > 0; i++) {
+    if (discounts[i] < totals[i]) {
+      discounts[i]++;
+      remainingCents--;
+    }
+  }
+  if (remainingCents !== 0) throw new Error('discount_allocation_failed');
   const items: PreferenceLine[] = [];
   for (let i = 0; i < lines.length; i++) {
     const remaining = totals[i] - discounts[i];
