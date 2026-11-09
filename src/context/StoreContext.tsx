@@ -199,7 +199,7 @@ export const StoreProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState<boolean>(false);
 
   // Coupons & Shipping
-  const [appliedCoupon, setAppliedCoupon] = useState<string | null>('PULSAR10');
+  const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null);
   const [destinationCep, setDestinationCep] = useState<string>('04571-010');
   const [shippingOptions, setShippingOptions] = useState<ShippingOption[]>([]);
   const [selectedShipping, setSelectedShipping] = useState<ShippingOption | null>(null);
