@@ -45,3 +45,32 @@ export function validateCouponPayload(input: unknown, mode: 'create' | 'update')
   if (clean.starts_at && clean.expires_at && clean.expires_at <= clean.starts_at) throw new Error('invalid_period');
   return clean;
 }
+
+/**
+ * A server-validated promotion for one admin-created PREVIEW pending order.
+ * Prices and subtotal MUST come from verifyCheckout, not the browser.
+ * This does not activate customer coupons or payment collection.
+ */
+export function calculateAdminCouponDiscountCents(
+  coupon: Pick<CouponRecord, 'discount_type' | 'discount_value' | 'is_active' | 'starts_at' | 'expires_at'>,
+  subtotalCents: number,
+  now: Date = new Date()
+): number {
+  if (!coupon.is_active) throw new Error('coupon_inactive');
+  if (!Number.isSafeInteger(subtotalCents) || subtotalCents <= 0) throw new Error('invalid_subtotal');
+  if (!Number.isFinite(now.getTime())) throw new Error('invalid_clock');
+  if (coupon.starts_at !== null && (!Number.isFinite(Date.parse(coupon.starts_at)) ||
+      now.getTime() < Date.parse(coupon.starts_at))) throw new Error('coupon_not_started');
+  if (coupon.expires_at !== null && (!Number.isFinite(Date.parse(coupon.expires_at)) ||
+      now.getTime() >= Date.parse(coupon.expires_at))) throw new Error('coupon_expired');
+  const value = Number(coupon.discount_value);
+  if (!Number.isFinite(value) || value <= 0 || Math.round(value * 100) !== value * 100) throw new Error('coupon_invalid_value');
+  if (coupon.discount_type === 'percent' && value > 0 && value <= 100) {
+    // Round only after using integer cents so the payment total stays exact.
+    return Math.min(subtotalCents, Math.round(subtotalCents * value / 100));
+  }
+  if (coupon.discount_type === 'fixed' && value > 0 && value <= 10000) {
+    return Math.min(subtotalCents, Math.round(value * 100));
+  }
+  throw new Error('coupon_invalid_type');
+}
